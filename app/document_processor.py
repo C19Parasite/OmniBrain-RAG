@@ -1,5 +1,5 @@
 import os
-import fitz  # PyMuPDF
+import pymupdf  # Up to date import replacing 'fitz'
 import pdfplumber
 import pytesseract
 from PIL import Image
@@ -17,7 +17,7 @@ class DocumentProcessor:
         if not os.path.exists(self.file_path):
             raise FileNotFoundError(f"File not found: {self.file_path}")
         
-        doc = fitz.open(self.file_path)
+        doc = pymupdf.open(self.file_path)
         extracted_pages = []
         
         for page_num, page in enumerate(doc):

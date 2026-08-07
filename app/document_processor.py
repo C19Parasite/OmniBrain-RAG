@@ -1,5 +1,5 @@
 import os
-import pymupdf  # Up to date import replacing 'fitz'
+import pymupdf
 import pdfplumber
 import pytesseract
 from PIL import Image
@@ -7,7 +7,7 @@ from PIL import Image
 class DocumentProcessor:
     """
     Core Document Processing class for OmniBrain-RAG.
-    Handles text extraction, table parsing, and OCR processing.
+    Handles text extraction, table parsing, OCR processing, and chunking.
     """
     def __init__(self, file_path: str):
         self.file_path = file_path
@@ -54,5 +54,33 @@ class DocumentProcessor:
         text = pytesseract.image_to_string(img)
         return text.strip()
 
+    def create_chunks(self, text_pages: list[dict], chunk_size: int = 500, overlap: int = 50) -> list[dict]:
+        """
+        Splits extracted page text into smaller chunk units with metadata for RAG embeddings.
+        """
+        chunks = []
+        chunk_id = 0
+        
+        for page_data in text_pages:
+            page_num = page_data["page"]
+            content = page_data["content"]
+            
+            start = 0
+            while start < len(content):
+                end = start + chunk_size
+                chunk_text = content[start:end]
+                
+                chunks.append({
+                    "chunk_id": chunk_id,
+                    "page": page_num,
+                    "text": chunk_text,
+                    "source": os.path.basename(self.file_path)
+                })
+                
+                chunk_id += 1
+                start += (chunk_size - overlap)
+                
+        return chunks
+
 if __name__ == "__main__":
-    print("Document Processor module updated successfully.")
+    print("Document Processor module with chunking updated successfully.")

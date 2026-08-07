@@ -22,3 +22,5 @@ data/processed/
 # OS files
 .DS_Store
 Thumbs.dbvenv/
+data/chroma_db/
+data/test_chroma_db/

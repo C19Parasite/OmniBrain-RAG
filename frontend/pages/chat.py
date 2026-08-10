@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.api import ask_question
 st.title("Chat with OmniBrain RAG")
 st.write("Ask questions about your uploaded PDF document.")
 if "messages" not in st.session_state:
@@ -11,8 +12,12 @@ if "messages" not in st.session_state:
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.write(question)
-        # Here you would typically call your RAG model to get a response
-        response = "This is a placeholder response from OmniBrain RAG."
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        with st.chat_message("assistant"):
+            result = ask_question(question)
+
+           if result["success"]:
+               response = result["answer"]
+            else:
+               response = "Unable to get a response."
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            with st.chat_message("assistant"):
             st.write(response)

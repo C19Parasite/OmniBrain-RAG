@@ -41,7 +41,7 @@ def query_api(question):
         response = requests.post(
             f"{BASE_URL}/query",
             json={
-                "question": question
+                "query": question
             },
         )
 
@@ -50,7 +50,7 @@ def query_api(question):
 
             return {
                 "success": True,
-                "answer": data.get("answer", "No answer received"),
+                "answer": data.get("context", "No context received"),
             }
 
         return {

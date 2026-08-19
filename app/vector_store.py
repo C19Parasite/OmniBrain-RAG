@@ -1,20 +1,10 @@
-import os
-import chromadb
-from sentence_transformers import SentenceTransformer
+DOCUMENTS = []
 
-class VectorStoreManager:
-    """
-    Manages vector embeddings and ChromaDB storage for OmniBrain-RAG.
-    """
-    def __init__(self, collection_name: str = "omnibrain_docs", db_path: str = "data/chroma_db"):
-        self.db_path = db_path
-        self.collection_name = collection_name
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
-        
-        # Initialize Persistent ChromaDB client
-        self.client = chromadb.PersistentClient(path=self.db_path)
-        self.collection = self.client.get_or_create_collection(name=self.collection_name)
-
+def add_document(filename: str, text: str):
+    DOCUMENTS.append({
+        "filename": filename,
+        "text": text
+    })
     def add_chunks(self, chunks: list[dict]):
         """
         Converts text chunks into embeddings and saves them to ChromaDB.
@@ -36,8 +26,9 @@ class VectorStoreManager:
             metadatas=metadatas,
             ids=ids
         )
-        def add_documents(self, chunks):
-         """Alias for add_chunks to support alternate method calls."""
+
+    def add_documents(self, file_path, chunks):
+        """Alias for add_chunks to support alternate method calls."""
         return self.add_chunks(chunks)
 
     def search_similar(self, query: str, top_k: int = 3) -> list[dict]:

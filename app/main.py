@@ -23,15 +23,16 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 class QueryRequest(BaseModel):
-    query: str
+    query: Optional[str] = None
+    question: Optional[str] = None
     top_k: Optional[int] = 4
 
-
 class QueryResponse(BaseModel):
-    query: str
-    context: str
-    sources: List[dict]
-
+    query: Optional[str] = None
+    question: Optional[str] = None
+    answer: str
+    context: Optional[str] = None
+    sources: List[dict] = []
 
 @app.get("/")
 def read_root():
@@ -46,7 +47,7 @@ async def upload_document(file: UploadFile = File(...)):
             detail="Unsupported file format. Please upload PDF, TXT, MD, or Image files."
         )
 
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    file_path = os.path.join(UPLOAD_DIR, os.path.basename(file.filename))
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -71,10 +72,14 @@ async def upload_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to process document: {str(e)}")
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post("/query")
 def run_query(request: QueryRequest):
     try:
-        response = rag_pipeline.generate_response(request.query)
+        # Support both 'query' and 'question' fields for frontend/backend contract alignment
+        query_text = getattr(request, "query", None) or getattr(request, "question", None)
+        top_k = getattr(request, "top_k", 3)
+        
+        response = rag_pipeline.generate_response(query_text, top_k=top_k)
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")

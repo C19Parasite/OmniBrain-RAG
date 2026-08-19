@@ -31,11 +31,12 @@ class RAGPipeline:
         )
 
         return {
-            "query": query,
-            "context": combined_context,
-            "sources": metadatas,
-            "prompt": system_prompt
-        }
+        "query": query,
+        "question": query,
+        "answer": combined_context,  # Populates 'answer' for the frontend chat client
+        "context": combined_context,
+        "sources": metadata,
+    }
 
 if __name__ == "__main__":
     print("RAG Pipeline module created successfully.")

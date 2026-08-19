@@ -36,6 +36,9 @@ class VectorStoreManager:
             metadatas=metadatas,
             ids=ids
         )
+        def add_documents(self, chunks):
+         """Alias for add_chunks to support alternate method calls."""
+        return self.add_chunks(chunks)
 
     def search_similar(self, query: str, top_k: int = 3) -> list[dict]:
         """

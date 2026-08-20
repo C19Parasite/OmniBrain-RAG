@@ -3,9 +3,7 @@ from utils.api import upload_file
 
 
 st.title("Upload Document")
-
-st.write("Upload a PDF document to use with OmniBrain RAG.")
-
+st.subheader("Upload a PDF to chat with your document")
 uploaded_file = st.file_uploader(
     "Choose a PDF file",
     type=["pdf"]

@@ -11,11 +11,21 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file:
     st.write("Selected file:", uploaded_file.name)
+if st.button("Upload"):
 
-    if st.button("Upload"):
-        result = upload_file(uploaded_file)
+    progress = st.progress(0)
+    status = st.empty()
 
-        if result["success"]:
-            st.success(result["message"])
-        else:
-            st.error(result["message"])
+    status.write("Uploading document...")
+    progress.progress(30)
+
+    result = upload_file(uploaded_file)
+
+    progress.progress(100)
+
+    if result["success"]:
+        status.empty()
+        st.success(result["message"])
+    else:
+        status.empty()
+        st.error(result["message"])

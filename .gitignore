@@ -22,3 +22,8 @@ data/processed/
 # OS files
 .DS_Store
 Thumbs.dbvenv/
+
+.env
+.env.*
+!.env.example
+data/uploads/

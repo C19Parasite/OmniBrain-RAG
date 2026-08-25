@@ -1,42 +1,32 @@
 import streamlit as st
 
-st.set_page_config(
-    page_title="OmniBrain RAG",
-    page_icon="🧠",
-    layout="wide"
-)
-with st.sidebar:
-    st.title("🧠 OmniBrain")
-
-    st.divider()
-
-    st.page_link("app.py", label="🏠 Home")
-    st.page_link("pages/upload.py", label="📄 Upload")
-    st.page_link("pages/chat.py", label="💬 Chat")
-
-    st.divider()
-
-    st.caption("AI Document Assistant")
-
+# Your existing sidebar/navigation code should remain here
 
 st.title("🧠 OmniBrain RAG")
-st.subheader("AI Document Assistant")
+st.subheader("Chat with your documents")
 
 st.write(
-    "Upload your documents and ask questions using AI."
+    "Upload your documents and ask questions about their content "
+    "using our AI document assistant."
 )
-st.divider()
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
-    st.info("📄 Upload Documents")
-    st.write("Upload PDF documents to OmniBrain.")
+    st.subheader("📄 Upload Documents")
+    st.write(
+        "Upload a PDF document and prepare it for question answering."
+    )
 
 with col2:
-    st.info("💬 Ask Questions")
-    st.write("Ask questions about your documents.")
+    st.subheader("💬 Ask Questions")
+    st.write(
+        "Ask questions about your uploaded document and view the answers."
+    )
 
-with col3:
-    st.info("⚡ Get Answers")
-    st.write("Get answers based on your documents.")
+st.subheader("How it works")
+
+st.write("1. 📄 Upload your PDF")
+st.write("2. 🔍 Process your document")
+st.write("3. 💬 Ask questions")
+st.write("4. 🧠 Get answers")

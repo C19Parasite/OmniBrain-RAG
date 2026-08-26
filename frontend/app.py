@@ -20,9 +20,8 @@ with col1:
 
 with col2:
     st.subheader("💬 Ask Questions")
-    st.write(
-        "Ask questions about your uploaded document and view the answers."
-    )
+
+    st.write(  "Ask questions about your uploaded document and view the answers." )
 
 st.subheader("How it works")
 

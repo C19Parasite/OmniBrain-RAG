@@ -8,6 +8,57 @@ class DocumentProcessor:
     def __init__(self, file_path: str):
         self.file_path = file_path
 
+    def extract_text(self) -> list[dict]:
+        """Extract text from each page as page-numbered records."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(self.file_path)
+
+        ext = os.path.splitext(self.file_path)[1].lower()
+        if ext == ".pdf":
+            reader = PdfReader(self.file_path)
+            return [
+                {"page": page_number, "content": page.extract_text() or ""}
+                for page_number, page in enumerate(reader.pages, start=1)
+            ]
+        if ext in [".txt", ".md"]:
+            with open(self.file_path, "r", encoding="utf-8") as file:
+                return [{"page": 1, "content": file.read()}]
+        raise ValueError(f"Unsupported file format: {ext}")
+
+    def extract_tables(self) -> list:
+        """Extract tables from a PDF using pdfplumber."""
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(self.file_path)
+        if os.path.splitext(self.file_path)[1].lower() != ".pdf":
+            raise ValueError("Table extraction requires a PDF file")
+
+        import pdfplumber
+
+        with pdfplumber.open(self.file_path) as pdf:
+            return [table for page in pdf.pages for table in page.extract_tables()]
+
+    def create_chunks(
+        self,
+        pages: list[dict],
+        chunk_size: int = 500,
+        overlap: int = 50,
+    ) -> list[dict]:
+        """Split page records into chunks while preserving source metadata."""
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=overlap,
+        )
+        chunks = []
+        for page in pages:
+            for text in splitter.split_text(page.get("content", "")):
+                chunks.append({
+                    "text": text,
+                    "page": page.get("page", 1),
+                    "source": os.path.basename(self.file_path),
+                    "chunk_id": len(chunks),
+                })
+        return chunks
+
     def process(self) -> list[dict]:
         """Dispatches processing based on file extension."""
         ext = os.path.splitext(self.file_path)[1].lower()

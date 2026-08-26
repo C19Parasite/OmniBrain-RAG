@@ -14,7 +14,7 @@ class QueryRouter:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "mixtral-8x7b-32768",
+        model_name: str = "openai/gpt-oss-20b",
         provider: Literal["groq", "openai"] = "groq"
     ):
         """
@@ -31,7 +31,7 @@ class QueryRouter:
         self.model_name = model_name
         self.api_key = api_key
         
-        
+        # Initialize LLMManager (your existing class)
         self.llm_manager = LLMManager(
             api_key=api_key,
             model_name=model_name
@@ -88,18 +88,36 @@ Respond ONLY with valid JSON in this format:
                 reasoning=parsed.get("reasoning", "")
             )
         except (json.JSONDecodeError, ValueError, KeyError, IndexError) as e:
-            # Fallback to semantic_search if parsing fails
-            return QueryAnalysis(
-                query_type="semantic_search",
-                confidence=0.5,
-                reasoning=f"Parsing error, defaulted to semantic search: {str(e)}"
-            )
+            return self._fallback_analysis(query, str(e))
+
+    @staticmethod
+    def _fallback_analysis(query: str, error: str) -> QueryAnalysis:
+        normalized_query = query.lower()
+        vision_terms = ("chart", "table", "graph", "visual", "shown", "image")
+        sql_terms = ("stock price", "revenue", "financial metric", "historical", "date")
+        has_vision_terms = any(term in normalized_query for term in vision_terms)
+        has_sql_terms = any(term in normalized_query for term in sql_terms)
+
+        if has_vision_terms and has_sql_terms:
+            query_type = "hybrid"
+        elif has_vision_terms:
+            query_type = "vision_analysis"
+        elif has_sql_terms:
+            query_type = "sql_query"
+        else:
+            query_type = "semantic_search"
+
+        return QueryAnalysis(
+            query_type=query_type,
+            confidence=0.7,
+            reasoning=f"Local fallback classification after LLM response error: {error}"
+        )
 
 
 def supervisor_node(
     state: AgentState,
     api_key: Optional[str] = None,
-    model_name: str = "mixtral-8x7b-32768",
+    model_name: str = "openai/gpt-oss-20b",
     provider: Literal["groq", "openai"] = "groq"
 ) -> dict:
     """

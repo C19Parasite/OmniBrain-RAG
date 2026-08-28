@@ -14,15 +14,29 @@ uploaded_file = st.file_uploader(
     type=["pdf"]
 )
 
-if uploaded_file:
-    st.success(f"Selected: {uploaded_file.name}")
+# No file selected
+if uploaded_file is None:
+    st.warning("⚠️ Please select a PDF document to continue.")
 
-    if st.button("📤 Upload Document"):
+else:
+    # File selected
+    st.success(f"📄 Selected: {uploaded_file.name}")
 
-        with st.spinner("Uploading document..."):
+    if st.button("📤 Upload Document", use_container_width=True):
+
+        # Show loading message while uploading
+        with st.spinner("⏳ Uploading document..."):
             result = upload_file(uploaded_file)
 
+        # Upload successful
         if result["success"]:
-            st.success(result["message"])
+            st.success(f"✅ {result['message']}")
+
+            st.info(
+                "💬 Your document is ready. "
+                "Go to the Chat section to ask questions."
+            )
+
+        # Upload failed
         else:
-            st.error(result["message"])
+            st.error(f"❌ {result['message']}")

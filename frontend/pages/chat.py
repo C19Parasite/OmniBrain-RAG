@@ -17,7 +17,7 @@ for message in st.session_state.messages:
         if message.get("source"):
             st.caption(f"📄 Source: {message['source']}")
 
-# Show helpful message when chat is empty
+# Empty chat state
 if not st.session_state.messages:
     st.info(
         "💬 Start a conversation by asking a question "
@@ -30,9 +30,11 @@ if not st.session_state.messages:
     st.write("• What are the important topics?")
 
 # Chat input
-question = st.chat_input("Ask a question about your document...")
+question = st.chat_input(
+    "Ask a question about your document..."
+)
 
-if question:
+if question and question.strip():
 
     # Save user's question
     st.session_state.messages.append(
@@ -46,18 +48,22 @@ if question:
     with st.chat_message("user"):
         st.write(question)
 
-    # Call API
-    with st.spinner("Thinking..."):
+    # Call API with loading state
+    with st.spinner("⏳ Thinking..."):
         result = query_api(question)
 
+    # Successful response
     if result["success"]:
 
         answer = result["answer"]
 
-        # Get source if API provides one
-        source = result.get("source", "Uploaded document")
+        # Get source if available
+        source = result.get(
+            "source",
+            "Uploaded document"
+        )
 
-        # Save assistant answer and citation
+        # Save assistant response
         st.session_state.messages.append(
             {
                 "role": "assistant",
@@ -66,12 +72,17 @@ if question:
             }
         )
 
-        # Display assistant answer
+        # Display answer
         with st.chat_message("assistant"):
             st.write(answer)
 
-            # Citation UI
-            st.caption(f"📄 Source: {source}")
+            # Display citation
+            st.caption(
+                f"📄 Source: {source}"
+            )
 
+    # API error
     else:
-        st.error(result["answer"])
+        st.error(
+            f"❌ {result['answer']}"
+        )

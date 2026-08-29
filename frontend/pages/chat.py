@@ -1,23 +1,39 @@
 import streamlit as st
 from utils.api import query_api
 
+# -------------------------------------------------
+# Page title
+# -------------------------------------------------
 st.title("🧠 OmniBrain RAG")
-st.subheader("Chat with your documents")
+st.subheader("Ask questions about your uploaded document")
 
+st.write(
+    "Ask questions about your uploaded document and "
+    "get answers using the AI document assistant."
+)
+
+# -------------------------------------------------
 # Create chat history
+# -------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# -------------------------------------------------
 # Display previous messages
+# -------------------------------------------------
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
-        # Display citation if available
+        # Display citation/source if available
         if message.get("source"):
-            st.caption(f"📄 Source: {message['source']}")
+            st.caption(
+                f"📄 Source: {message['source']}"
+            )
 
+# -------------------------------------------------
 # Empty chat state
+# -------------------------------------------------
 if not st.session_state.messages:
     st.info(
         "💬 Start a conversation by asking a question "
@@ -25,15 +41,25 @@ if not st.session_state.messages:
     )
 
     st.write("You can try asking:")
+
     st.write("• What is this document about?")
     st.write("• Summarize the main points.")
     st.write("• What are the important topics?")
 
+    st.caption(
+        "💡 Tip: Ask specific questions for more useful answers."
+    )
+
+# -------------------------------------------------
 # Chat input
+# -------------------------------------------------
 question = st.chat_input(
     "Ask a question about your document..."
 )
 
+# -------------------------------------------------
+# Process question
+# -------------------------------------------------
 if question and question.strip():
 
     # Save user's question
@@ -48,11 +74,15 @@ if question and question.strip():
     with st.chat_message("user"):
         st.write(question)
 
-    # Call API with loading state
+    # -------------------------------------------------
+    # Call API with loading message
+    # -------------------------------------------------
     with st.spinner("⏳ Thinking..."):
         result = query_api(question)
 
+    # -------------------------------------------------
     # Successful response
+    # -------------------------------------------------
     if result["success"]:
 
         answer = result["answer"]
@@ -72,16 +102,18 @@ if question and question.strip():
             }
         )
 
-        # Display answer
+        # Display assistant answer
         with st.chat_message("assistant"):
             st.write(answer)
 
-            # Display citation
+            # Display citation/source
             st.caption(
                 f"📄 Source: {source}"
             )
 
+    # -------------------------------------------------
     # API error
+    # -------------------------------------------------
     else:
         st.error(
             f"❌ {result['answer']}"

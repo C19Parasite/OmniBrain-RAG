@@ -1,7 +1,8 @@
 import os
 from typing import Optional
+from dotenv import load_dotenv
 
-
+load_dotenv()
 class LLMManager:
     """
     Handles communication with the configured LLM provider.
@@ -10,7 +11,7 @@ class LLMManager:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_name: str = "llama-3.1-8b-instant"
+        model_name: str = "openai/gpt-oss-20b"
     ):
         self.api_key = (
             api_key

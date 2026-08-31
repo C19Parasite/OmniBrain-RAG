@@ -35,7 +35,9 @@ with st.sidebar:
 
     st.divider()
 
-    st.caption("Upload a PDF and ask questions about it.")
+    st.caption(
+        "Upload a PDF and ask questions about it."
+    )
 
 
 # -------------------------------------------------
@@ -43,11 +45,18 @@ with st.sidebar:
 # -------------------------------------------------
 st.title("🧠 OmniBrain RAG")
 
-st.subheader("Chat with your documents")
+st.subheader(
+    "Your AI-powered document assistant"
+)
 
 st.write(
-    "Upload your documents and ask questions about their content "
-    "using our AI document assistant."
+    "Upload a PDF, ask questions about its content, "
+    "and get intelligent answers using AI."
+)
+
+st.info(
+    "💡 Get started by uploading a PDF document. "
+    "Once uploaded, open Chat and ask questions about it."
 )
 
 st.divider()
@@ -62,11 +71,14 @@ with col1:
     st.subheader("📄 Upload Documents")
 
     st.write(
-        "Upload a PDF document and prepare it for "
-        "question answering."
+        "Upload a PDF document and prepare it "
+        "for question answering."
     )
 
-    if st.button("📄 Go to Upload", use_container_width=True):
+    if st.button(
+        "📄 Go to Upload",
+        use_container_width=True
+    ):
         st.switch_page("pages/upload.py")
 
 
@@ -75,10 +87,13 @@ with col2:
 
     st.write(
         "Ask questions about your uploaded document "
-        "and view the answers."
+        "and view AI-generated answers."
     )
 
-    if st.button("💬 Go to Chat", use_container_width=True):
+    if st.button(
+        "💬 Go to Chat",
+        use_container_width=True
+    ):
         st.switch_page("pages/chat.py")
 
 
@@ -102,11 +117,11 @@ for step in steps:
 
 
 # -------------------------------------------------
-# Helpful information
+# Getting started
 # -------------------------------------------------
 st.divider()
 
-st.subheader("💡 Getting started")
+st.subheader("💡 Getting Started")
 
 st.write(
     "1. Go to the Upload page and select your PDF."
@@ -121,10 +136,9 @@ st.write(
 )
 
 st.write(
-    "4. Ask a question about your document."
+    "4. Ask questions about your document."
 )
 
-st.info(
-    "💬 Tip: Ask specific questions about the content "
-    "of your uploaded document for better answers."
+st.success(
+    "🚀 You're ready to start chatting with your document!"
 )

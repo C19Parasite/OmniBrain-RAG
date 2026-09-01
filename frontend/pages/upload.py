@@ -1,42 +1,120 @@
 import streamlit as st
-from utils.api import upload_file
+from utils.api import query_api
 
-st.title("📄 Upload Document")
-st.subheader("Upload a PDF to start chatting with your document.")
+# -------------------------------------------------
+# Chat page
+# -------------------------------------------------
+st.title("🧠 OmniBrain RAG")
+st.subheader("Chat with your documents")
 
-st.info(
-    "Upload a PDF document. After uploading, you can ask questions "
-    "about its contents in the Chat section."
+st.write(
+    "Ask questions about your uploaded document "
+    "and get AI-powered answers."
 )
 
-uploaded_file = st.file_uploader(
-    "Choose a PDF document",
-    type=["pdf"]
-)
+st.divider()
 
-# No file selected
-if uploaded_file is None:
-    st.warning("⚠️ Please select a PDF document to continue.")
+# -------------------------------------------------
+# Create chat history
+# -------------------------------------------------
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-else:
-    # File selected
-    st.success(f"📄 Selected: {uploaded_file.name}")
+# -------------------------------------------------
+# Display previous messages
+# -------------------------------------------------
+for message in st.session_state.messages:
 
-    if st.button("📤 Upload Document", use_container_width=True):
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
 
-        # Show loading message while uploading
-        with st.spinner("⏳ Uploading document..."):
-            result = upload_file(uploaded_file)
-
-        # Upload successful
-        if result["success"]:
-            st.success(f"✅ {result['message']}")
-
-            st.info(
-                "💬 Your document is ready. "
-                "Go to the Chat section to ask questions."
+        # Display source/citation when available
+        if message.get("source"):
+            st.caption(
+                f"📄 Source: {message['source']}"
             )
 
-        # Upload failed
-        else:
-            st.error(f"❌ {result['message']}")
+# -------------------------------------------------
+# Empty chat state
+# -------------------------------------------------
+if not st.session_state.messages:
+
+    st.info(
+        "💬 Start a conversation by asking a question "
+        "about your uploaded document."
+    )
+
+    st.write("You can try asking:")
+
+    st.write("• What is this document about?")
+    st.write("• Summarize the main points.")
+    st.write("• What are the important topics?")
+
+# -------------------------------------------------
+# Chat input
+# -------------------------------------------------
+question = st.chat_input(
+    "Ask a question about your document..."
+)
+
+# -------------------------------------------------
+# Process question
+# -------------------------------------------------
+if question and question.strip():
+
+    # Save user's question
+    st.session_state.messages.append(
+        {
+            "role": "user",
+            "content": question
+        }
+    )
+
+    # Display user's question
+    with st.chat_message("user"):
+        st.write(question)
+
+    # -------------------------------------------------
+    # Call API with loading state
+    # -------------------------------------------------
+    with st.spinner("⏳ Thinking..."):
+        result = query_api(question)
+
+    # -------------------------------------------------
+    # Successful response
+    # -------------------------------------------------
+    if result["success"]:
+
+        answer = result["answer"]
+
+        source = result.get(
+            "source",
+            "Uploaded document"
+        )
+
+        # Save assistant response
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": answer,
+                "source": source
+            }
+        )
+
+        # Display assistant response
+        with st.chat_message("assistant"):
+
+            st.write(answer)
+
+            st.caption(
+                f"📄 Source: {source}"
+            )
+
+    # -------------------------------------------------
+    # API error
+    # -------------------------------------------------
+    else:
+
+        st.error(
+            f"❌ {result['answer']}"
+        )

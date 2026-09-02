@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniBrain | Multi-Modal Financial Intelligence</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Bar (Matching Reference Header) -->
+  <header class="navbar">
+    <div class="navbar-brand">
+      <span class="brand-title">OMNIBRAIN ORCHESTRATOR</span>
+    </div>
+
+    <nav class="navbar-links">
+      <button class="nav-link active" data-tab="memo-studio">Memo Studio</button>
+      <button class="nav-link" data-tab="doc-center">Document Center</button>
+      <button class="nav-link" data-tab="sql-sandbox">SQL Sandbox</button>
+      <button class="nav-link" data-tab="settings-panel">Settings</button>
+    </nav>
+
+    <div class="navbar-actions">
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span id="headerStatusText">All Agents Active</span>
+      </div>
+      <button class="btn-outline" id="navRunAnalysisBtn">New Analysis</button>
+    </div>
+  </header>
+
+  <!-- Main Content Wrapper -->
+  <main class="app-body">
+
+    <!-- ========================================================= -->
+    <!-- TAB 1: MEMO STUDIO -->
+    <!-- ========================================================= -->
+    <section class="tab-pane active" id="view-memo-studio">
+      
+      <!-- Split-Screen Hero (Direct Reference Layout) -->
+      <div class="split-hero">
+        
+        <!-- Left Hero Column: Monumental Typography & Query Input -->
+        <div class="hero-left">
+          <div class="hero-header-block">
+            <h1 class="monumental-heading">FINANCIAL<br>INTELLIGENCE</h1>
+            <div class="hero-byline">BY OMNIBRAIN MULTI-MODAL AGENTS</div>
+          </div>
+
+          <div class="hero-footer-block">
+            <p class="hero-statement">
+              Personalized multi-agent synthesis across SQL financial records, SEC reports, and visual charts to build institutional conviction.
+            </p>
+
+            <!-- Query Input Bar -->
+            <div class="query-box">
+              <textarea 
+                id="memoQueryInput" 
+                placeholder="Ask a multimodal financial question (e.g. 'Compare NVDA and MSFT revenue growth and management commentary')..."
+                rows="2"
+              ></textarea>
+              <button id="runMemoQueryBtn" class="btn-submit-query">
+                <span>Analyze</span> ➔
+              </button>
+            </div>
+
+            <!-- Query Presets -->
+            <div class="presets-row">
+              <span class="preset-label">SUGGESTIONS:</span>
+              <button class="preset-tag" data-query="Compare NVDA and MSFT's recent revenue growth and summarize what management said about it">
+                NVDA vs MSFT Performance
+              </button>
+              <button class="preset-tag" data-query="What does the segment revenue chart show about Automotive &amp; Robotics revenue growth compared to Gaming?">
+                Automotive vs Gaming Chart
+              </button>
+              <button class="preset-tag" data-query="Based on the balance sheet chart, what were the total current assets and long-term debt?">
+                Balance Sheet Assets &amp; Debt
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Hero Column: Live Multi-Agent Graph & Visual Canvas -->
+        <div class="hero-right">
+          <div class="hero-visual-card">
+            <div class="visual-card-header">
+              <span class="section-label">LIVE AGENT ORCHESTRATION GRAPH</span>
+              <span class="graph-status-tag" id="graphStatusText">Engine Idle</span>
+            </div>
+
+            <!-- Animated Multi-Agent Node Flow -->
+            <div class="agent-nodes-grid" id="agentGraph">
+              
+              <div class="agent-node" id="node-Supervisor">
+                <div class="node-badge">01</div>
+                <div class="node-main">
+                  <div class="node-title">Supervisor Orchestrator</div>
+                  <div class="node-sub">Decomposition &amp; Routing</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+              <div class="agent-node" id="node-SearchAgent">
+                <div class="node-badge">02</div>
+                <div class="node-main">
+                  <div class="node-title">Search Agent (Text RAG)</div>
+                  <div class="node-sub">ChromaDB Vector Store</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+              <div class="agent-node" id="node-VisionAgent">
+                <div class="node-badge">03</div>
+                <div class="node-main">
+                  <div class="node-title">Vision Agent (VLM)</div>
+                  <div class="node-sub">Multimodal Chart Ingestion</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+              <div class="agent-node" id="node-SQLAgent">
+                <div class="node-badge">04</div>
+                <div class="node-main">
+                  <div class="node-title">Text-to-SQL Agent</div>
+                  <div class="node-sub">Read-Only Financial DB</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+              <div class="agent-node" id="node-Synthesizer">
+                <div class="node-badge">05</div>
+                <div class="node-main">
+                  <div class="node-title">Memo Synthesizer</div>
+                  <div class="node-sub">Institutional Citation Drafter</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+              <div class="agent-node" id="node-GuardrailEvaluator">
+                <div class="node-badge">06</div>
+                <div class="node-main">
+                  <div class="node-title">Guardrail Evaluator</div>
+                  <div class="node-sub">LLM-as-Judge Grounding Check</div>
+                </div>
+                <span class="node-indicator"></span>
+              </div>
+
+            </div>
+
+            <div class="visual-card-footer">
+              <span>Dynamic routing across SQLite and Vector Store</span>
+              <span id="runtimeTag">Latency: ~0.02s</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Analysis Results Area (Memo, Guardrail Scorecard, Citations) -->
+      <div id="memoResultsArea" class="results-container" style="display: none;">
+        
+        <!-- Guardrail Scorecard -->
+        <div class="editorial-card guardrail-card" id="guardrailCard">
+          <div class="guardrail-head">
+            <div>
+              <div class="guardrail-tag-line">
+                <span class="status-badge" id="guardrailStatusBadge">PASSED</span>
+                <span class="card-caption">FACTUAL GROUNDING &amp; HALLUCINATION AUDIT</span>
+              </div>
+              <p class="guardrail-desc-text" id="guardrailDesc">
+                All factual assertions audited against primary retrieved SQL records and document exhibits.
+              </p>
+            </div>
+            <div class="score-box">
+              <div class="score-val" id="guardrailScoreDisplay">100%</div>
+              <div class="score-lbl">Grounding Confidence</div>
+            </div>
+          </div>
+          <div class="guardrail-metrics-row" id="guardrailStatsRow"></div>
+        </div>
+
+        <!-- Synthesized Investment Memo -->
+        <div class="editorial-card memo-output-card">
+          <div class="memo-top-bar">
+            <div>
+              <span class="card-caption">INSTITUTIONAL INVESTMENT MEMORANDUM</span>
+              <h3 class="memo-title">Executive Research Analysis</h3>
+            </div>
+            <div class="memo-actions">
+              <span class="execution-badge" id="memoExecutionTime">0.01s</span>
+              <button class="btn-outline-sm" onclick="window.print()">Print / Export</button>
+            </div>
+          </div>
+          <div class="memo-content" id="memoRenderedBody"></div>
+        </div>
+
+        <!-- Accordions: Verified Citations, Claim Verdicts, Execution Traces -->
+        <div class="accordion-group">
+          
+          <details class="editorial-accordion" open>
+            <summary>Verified Citations Catalog (<span id="studioCitationCount">0</span> Sources)</summary>
+            <div class="accordion-content" id="studioCitationsList"></div>
+          </details>
+
+          <details class="editorial-accordion">
+            <summary>Claim-by-Claim Factual Verdicts (<span id="studioClaimCount">0</span> Audited Statements)</summary>
+            <div class="accordion-content" id="studioVerdictsList"></div>
+          </details>
+
+          <details class="editorial-accordion">
+            <summary>Orchestrator Execution Trace (<span id="studioTraceCount">0</span> Trace Events)</summary>
+            <div class="accordion-content" id="studioTracesList"></div>
+          </details>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- TAB 2: MULTIMODAL DOCUMENT CENTER -->
+    <!-- ========================================================= -->
+    <section class="tab-pane" id="view-doc-center" style="display: none;">
+      <div class="section-heading-bar">
+        <div>
+          <span class="card-caption">KNOWLEDGE BASE &amp; ASSETS</span>
+          <h2 class="section-title">Multimodal Document Center</h2>
+          <p class="section-desc">Ingest corporate financial reports (PDF, Markdown) and visual performance charts (PNG, JPG, SVG).</p>
+        </div>
+        <button class="btn-outline" id="triggerUploadBtn">+ Upload Document / Chart</button>
+      </div>
+
+      <!-- Upload Dropzone -->
+      <div class="editorial-dropzone" id="uploadDropzone">
+        <div class="dropzone-inner">
+          <div class="dropzone-icon">📄</div>
+          <div class="dropzone-text">Drop PDF reports, Markdown filings, or financial chart figures here</div>
+          <div class="dropzone-hint">Automatic parsing, VLM visual description, and ChromaDB vector indexing.</div>
+          <input type="file" id="hiddenFileInput" multiple style="display: none;" accept=".pdf,.png,.jpg,.jpeg,.svg,.md,.txt">
+        </div>
+      </div>
+
+      <!-- Documents Table -->
+      <div class="editorial-card table-card">
+        <div class="card-caption" style="margin-bottom: 12px;">INDEXED ASSETS (<span id="docTableCount">0</span>)</div>
+        <table class="editorial-table">
+          <thead>
+            <tr>
+              <th>Document / Figure Name</th>
+              <th>Format</th>
+              <th>Pages / Sections</th>
+              <th>Chunks Indexed</th>
+              <th>Date Added</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="docTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- TAB 3: SQL SANDBOX & SCHEMA EXPLORER -->
+    <!-- ========================================================= -->
+    <section class="tab-pane" id="view-sql-sandbox" style="display: none;">
+      <div class="section-heading-bar">
+        <div>
+          <span class="card-caption">STRUCTURED FINANCIAL DATA</span>
+          <h2 class="section-title">SQL Sandbox &amp; Schema Explorer</h2>
+          <p class="section-desc">Browse financial schema definitions and execute ad-hoc validated read-only SQL queries.</p>
+        </div>
+      </div>
+
+      <div class="sql-split-layout">
+        <!-- Sidebar Schema Browser -->
+        <div class="editorial-card schema-browser">
+          <div class="card-caption" style="margin-bottom: 12px;">DATABASE TABLES (SQLITE)</div>
+          <div id="schemaAccordionContainer" class="schema-list"></div>
+        </div>
+
+        <!-- SQL Editor & Output -->
+        <div class="editorial-card sql-editor-panel">
+          <div class="editor-top">
+            <span class="card-caption">READ-ONLY SQL QUERY EDITOR</span>
+            <button class="btn-outline" id="runSandboxSqlBtn">▶ Execute Query</button>
+          </div>
+          <textarea id="sandboxSqlInput" class="sql-textarea" spellcheck="false">SELECT ticker, quarter, revenue, net_income, gross_margin, eps FROM quarterly_financials ORDER BY quarter DESC LIMIT 5;</textarea>
+
+          <div class="sandbox-output-zone">
+            <div class="output-status-bar" id="sandboxMetaText">Click 'Execute Query' to run validated read-only SQL.</div>
+            <div class="output-table-scroll" id="sandboxTableContainer"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- TAB 4: SETTINGS PANEL -->
+    <!-- ========================================================= -->
+    <section class="tab-pane" id="view-settings-panel" style="display: none;">
+      <div class="section-heading-bar">
+        <div>
+          <span class="card-caption">SYSTEM CONFIGURATION</span>
+          <h2 class="section-title">Settings &amp; Providers</h2>
+          <p class="section-desc">Configure retrieval top-k, model temperatures, and local API keys.</p>
+        </div>
+      </div>
+
+      <div class="settings-two-col">
+        <!-- RAG Settings -->
+        <div class="editorial-card">
+          <div class="card-caption" style="margin-bottom: 16px;">RETRIEVAL PARAMETERS</div>
+          
+          <div class="form-field">
+            <label>Top-K Retrieval</label>
+            <input type="number" id="settingTopK" value="5" min="1" max="20" class="input-editorial">
+            <span class="hint-text">Number of semantic text/visual chunks retrieved per sub-task.</span>
+          </div>
+
+          <div class="form-field">
+            <label>Model Temperature</label>
+            <input type="number" id="settingTemperature" value="0.2" step="0.1" min="0.0" max="1.0" class="input-editorial">
+            <span class="hint-text">Generation temperature (lower values ensure high factual precision).</span>
+          </div>
+
+          <div class="form-field">
+            <label>Supervisor Routing Strategy</label>
+            <select id="settingRoutingMode" class="input-editorial">
+              <option value="dynamic_supervisor">Dynamic State-Machine Supervisor</option>
+              <option value="sql_first">SQL Priority</option>
+              <option value="multimodal_dense">Full Multimodal Retrieval</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- API Keys -->
+        <div class="editorial-card">
+          <div class="card-caption" style="margin-bottom: 16px;">MODEL PROVIDERS &amp; CREDENTIALS</div>
+          
+          <div class="form-field">
+            <label>Google Gemini API Key (Optional)</label>
+            <input type="password" id="settingGeminiKey" placeholder="AIzaSy..." class="input-editorial">
+            <span class="hint-text">Stored locally in your browser. Used for Gemini 1.5 Flash Vision &amp; Synthesis.</span>
+          </div>
+
+          <div class="form-field">
+            <label>OpenAI API Key (Optional)</label>
+            <input type="password" id="settingOpenAIKey" placeholder="sk-..." class="input-editorial">
+            <span class="hint-text">Used for GPT-4o Vision and OpenAI Embeddings.</span>
+          </div>
+
+          <button class="btn-outline" id="saveSettingsBtn" style="margin-top: 10px; width:100%;">Save Settings</button>
+        </div>
+
+        <!-- Reset Demo Card -->
+        <div class="editorial-card full-span">
+          <div class="card-caption" style="margin-bottom: 8px;">ENVIRONMENT MAINTENANCE</div>
+          <p class="section-desc" style="margin-bottom: 14px;">
+            Re-seed synthetic database records (AAPL, NVDA, MSFT, TSLA) and re-index all sample filings and balance sheet figures into ChromaDB.
+          </p>
+          <button class="btn-outline-danger" id="resetDemoDataBtn">Reset Demo Database &amp; Vector Store</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: CITATION EVIDENCE VIEWER -->
+  <!-- ========================================================= -->
+  <div class="modal-backdrop" id="citationModal">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <div class="modal-title-group">
+          <span class="modal-type-tag" id="modalCitationTypePill">[SQL]</span>
+          <h4 id="modalCitationTitle">Primary Evidence</h4>
+        </div>
+        <button class="modal-close-btn" id="closeCitationModalBtn">✕</button>
+      </div>
+      <div class="modal-main" id="modalCitationBody"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

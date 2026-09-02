@@ -48,12 +48,11 @@ class VisionAgent:
         }
 
     def _load_image_and_base64(self, image_input: Union[Path, str, bytes, Image.Image]) -> tuple[Image.Image, str]:
-        if isinstance(image_input, (str, Path)) and (is_path := Path(image_input)).exists():
-            with open(is_path, "rb") as f:
-                raw_bytes = f.read()
+        if isinstance(image_input, str) and image_input.startswith("data:"):
+            raw_b64 = image_input.split(",")[1]
+            raw_bytes = base64.b64decode(raw_b64)
             pil_img = Image.open(io.BytesIO(raw_bytes))
-            b64_str = base64.b64encode(raw_bytes).decode("utf-8")
-            return pil_img, b64_str
+            return pil_img, raw_b64
         elif isinstance(image_input, Image.Image):
             buf = io.BytesIO()
             image_input.save(buf, format="PNG")
@@ -64,11 +63,17 @@ class VisionAgent:
             pil_img = Image.open(io.BytesIO(image_input))
             b64_str = base64.b64encode(image_input).decode("utf-8")
             return pil_img, b64_str
-        elif isinstance(image_input, str) and image_input.startswith("data:"):
-            raw_b64 = image_input.split(",")[1]
-            raw_bytes = base64.b64decode(raw_b64)
-            pil_img = Image.open(io.BytesIO(raw_bytes))
-            return pil_img, raw_b64
+        elif isinstance(image_input, (str, Path)):
+            try:
+                is_path = Path(image_input)
+                if is_path.exists() and is_path.is_file():
+                    with open(is_path, "rb") as f:
+                        raw_bytes = f.read()
+                    pil_img = Image.open(io.BytesIO(raw_bytes))
+                    b64_str = base64.b64encode(raw_bytes).decode("utf-8")
+                    return pil_img, b64_str
+            except (OSError, ValueError):
+                pass
         raise ValueError("Invalid image input format.")
 
     def _call_vlm(self, image_b64: str, filename: str) -> str:

@@ -1,42 +1,65 @@
 # OmniBrain Studio
+### *Agentic Multi-Modal RAG Orchestrator*
 
-**Agentic Multi-Modal RAG Orchestrator for Institutional Financial Analysis**
-
-OmniBrain dynamically routes complex financial queries across a structured financial database (Text-to-SQL), unstructured corporate filings (Dense Semantic Vector RAG), and visual financial charts/tables (Vision-Language Models), followed by LLM-as-Judge hallucination guardrails.
-
----
-
-## 🌟 Studio Features
-
-1. **Live Agent Graph Stream**: Real-time visual state machine graph showing query decomposition, multi-agent dispatch, tool invocations, and grounding audit.
-2. **Multimodal Document Center**: Drag-and-drop ingestion of financial disclosures (PDF, Markdown, plain text) and graphic balance sheet/market segment figures (PNG, JPG, SVG).
-3. **SQL Sandbox & Schema Explorer**: Interactive SQLite schema browser and ad-hoc query runner protected by strict read-only validation.
-4. **Memo Studio**: Institutional investment memos with clickable inline citations (`[SQL]`, `[Visual]`, `[Text]`) opening source evidence drawers and VLM chart previews.
-5. **Guardrail Scorecard**: Sentence-level LLM-as-judge factual verification with inline callouts on ungrounded claims.
-6. **Settings Panel**: Custom configuration for retrieval top-$k$, model temperature, LLM provider selection, and demo data resets.
+OmniBrain Studio is an enterprise-grade multi-modal Retrieval-Augmented Generation (RAG) platform. It orchestrates specialized agents across **dense semantic text search (ChromaDB)**, **quantitative financial databases (Text-to-SQL)**, and **visual chart transcription (Vision VLM)** with **NeMo Guardrail factual claim auditing**.
 
 ---
 
-## 🚀 Quick Start
+## ?? Contributors
+- **Udipta Ray**
+- **Kalash Jain**
+- **Vansh Teotia**
+- **Aaryan Rathi**
+- **Tushar Kumar Pradhan**
+- **Rajeshwari Chetlapalli**
 
-### 1. Requirements & Setup
+---
+
+## ??? Project Structure
+
+```text
+omnibrain-multimodal-rag/
+??? app/                           # Core application package & CLI
+??? backend/                       # FastAPI backend server
+?   ??? agents/                    # Multi-agent orchestrators (Supervisor, Search, Vision, SQL)
+?   ??? rag/                       # Document parser, multi-scale embeddings, ChromaDB vector store
+?   ??? guardrails/                # NeMo / LLM-as-a-Judge factual grounding auditor
+?   ??? db/                        # SQLite financial database & seeders
+?   ??? models/                    # Pydantic schemas & response models
+??? chroma_db/                     # Persistent ChromaDB vector storage
+??? config/                        # Configuration settings, config.yaml, & system prompts
+??? data/                          # Uploaded documents & benchmark filings
+??? docs/                          # Architecture diagrams & API documentation
+??? frontend/                      # Web UI (Space Grotesk typography, landing page, chat studio)
+??? notebooks/                     # Interactive Jupyter walkthroughs
+??? tests/                         # Pytest test suite
+??? .env.example                   # Environment configuration template
+??? .gitignore                     # Git ignore rules (safeguards secrets & cache)
+??? conftest.py                    # Pytest configuration
+??? requirements.txt               # Dependencies
+??? main.py                        # Root launcher script
+```
+
+---
+
+## ?? Quickstart Guide
+
+### 1. Installation
 ```bash
+git clone <repo-url>
+cd omnibrain-multimodal-rag
 pip install -r requirements.txt
 ```
 
-### 2. Launch OmniBrain Studio
+### 2. Run the Application
 ```bash
-python run.py
+python main.py
 ```
-Open your browser and navigate to: **`http://localhost:8000`**
+Open **`http://localhost:8000`** in your browser.
 
 ---
 
-## 🏛️ Architecture & Modules
-
-- **`backend/app/agents/supervisor.py`**: Explicit state-machine coordinator managing planning, routing, synthesis, and guardrail auditing.
-- **`backend/app/agents/sql_agent.py`**: Safe Text-to-SQL generator executing over URI read-only SQLite connections.
-- **`backend/app/agents/vision_agent.py`**: VLM chart/table interpreter transforming visual financial exhibits into searchable text embeddings.
-- **`backend/app/agents/search_agent.py`**: Multimodal cosine similarity retriever backed by persistent ChromaDB.
-- **`backend/app/guardrails/evaluator.py`**: LLM-as-Judge factual grounding auditor verifying claims against primary evidence.
-- **`backend/app/db/database.py`**: Financial database schema manager (`companies`, `stock_history`, `quarterly_financials`, `analyst_estimates`).
+## ?? Automated Tests
+```bash
+pytest
+```

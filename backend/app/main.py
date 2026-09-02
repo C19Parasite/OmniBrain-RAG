@@ -14,7 +14,8 @@ from .models.schemas import (
     SQLTestRequest, SQLTestResponse,
     SearchTestRequest, SearchTestResponse, TextChunkResult,
     GuardrailReport, StructuredCitation,
-    DocumentItem, TableSchemaInfo, SQLSandboxRequest, SQLSandboxResponse
+    DocumentItem, TableSchemaInfo, SQLSandboxRequest, SQLSandboxResponse,
+    UploadPreviewResponse, CommitUploadRequest
 )
 from .db.database import FinancialDatabase
 from .db.seed_data import seed_database
@@ -49,9 +50,10 @@ documents_inventory: Dict[str, DocumentItem] = {}
 
 def sync_document_inventory():
     """Scans sample_data and uploads folders to sync document inventory."""
-    sample_dir = settings.BASE_DIR / "sample_data"
+    sample_dir = settings.SAMPLE_DATA_DIR
     upload_dir = settings.UPLOAD_DIR
     upload_dir.mkdir(parents=True, exist_ok=True)
+    sample_dir.mkdir(parents=True, exist_ok=True)
 
     for folder in [sample_dir, upload_dir]:
         if folder.exists():
@@ -74,7 +76,7 @@ def sync_document_inventory():
 
 def init_vector_store():
     """Index sample financial documents and visual charts into Chroma vector store if empty."""
-    sample_dir = settings.BASE_DIR / "sample_data"
+    sample_dir = settings.SAMPLE_DATA_DIR
     if sample_dir.exists():
         if vector_store.count() == 0:
             chunks = doc_parser.parse_directory(sample_dir)
@@ -129,7 +131,12 @@ async def run_query(req: QueryRequest):
     Decomposes query, coordinates SQL, Search, Vision Agents, synthesizes memo,
     and runs LLM-as-Judge guardrail evaluation.
     """
-    state = supervisor.process_query(req.query)
+    state = supervisor.process_query(
+        req.query,
+        document_ids=req.document_ids,
+        gemini_api_key=req.gemini_api_key,
+        openai_api_key=req.openai_api_key
+    )
     
     # Format structured citations
     structured_cites = [
@@ -174,13 +181,125 @@ async def list_documents():
     sync_document_inventory()
     return list(documents_inventory.values())
 
+@app.post("/api/upload/preview", response_model=UploadPreviewResponse)
+async def preview_upload_document(file: UploadFile = File(...)):
+    """
+    Staging endpoint: Uploads file to staging, extracts text / VLM transcription,
+    and returns extracted preview without committing yet, allowing the user to review and edit.
+    """
+    try:
+        dest_path = settings.UPLOAD_DIR / file.filename
+        content = await file.read()
+        with open(dest_path, "wb") as buffer:
+            buffer.write(content)
+
+        ext = dest_path.suffix.lower()
+        is_image = ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]
+        image_base64 = None
+
+        if is_image:
+            import base64
+            with open(dest_path, "rb") as img_f:
+                b64_str = base64.b64encode(img_f.read()).decode("utf-8")
+                image_base64 = f"data:image/{ext.replace('.', '')};base64,{b64_str}"
+
+        chunks = doc_parser.parse_file(dest_path)
+        extracted_text = "\n\n".join([c["text"] for c in chunks]) if chunks else ""
+        doc_id = dest_path.stem.lower()
+        page_count = max(1, max([c.get("page_number", 1) for c in chunks])) if chunks else 1
+
+        return UploadPreviewResponse(
+            doc_id=doc_id,
+            filename=file.filename,
+            content_type=ext.replace(".", ""),
+            size_bytes=dest_path.stat().st_size,
+            page_count=page_count,
+            chunk_count=len(chunks),
+            is_image=is_image,
+            image_base64=image_base64,
+            extracted_text=extracted_text
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
+
+@app.post("/api/upload/commit", response_model=DocumentItem)
+async def commit_upload_document(req: CommitUploadRequest):
+    """
+    Commits the uploaded (and potentially user-edited) document,
+    generates chunk embeddings, inserts into ChromaDB vector store,
+    and returns the indexed DocumentItem.
+    """
+    try:
+        doc_id = req.doc_id.lower()
+        file_path = settings.UPLOAD_DIR / req.filename
+        
+        # If user modified text or created markdown/text, save updated file
+        if not file_path.exists() or file_path.suffix.lower() in [".md", ".txt"]:
+            file_path.write_text(req.text_content, encoding="utf-8")
+
+        ext = file_path.suffix.lower()
+        is_image = ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]
+        
+        chunks = []
+        if is_image:
+            chunks = [{
+                "id": f"{doc_id}_img_p1_c1",
+                "doc_id": doc_id,
+                "text": req.text_content,
+                "source_document": req.filename,
+                "page_number": 1,
+                "section_title": f"Visual Exhibit: {req.filename}",
+                "chunk_type": "visual",
+                "image_base64": req.image_base64
+            }]
+        else:
+            # Chunk the (potentially edited) text content
+            paragraphs = [p.strip() for p in req.text_content.split("\n\n") if len(p.strip()) > 10]
+            if not paragraphs:
+                paragraphs = [req.text_content.strip()]
+            
+            for idx, p in enumerate(paragraphs):
+                chunks.append({
+                    "id": f"{doc_id}_p1_c{idx+1}",
+                    "doc_id": doc_id,
+                    "text": p,
+                    "source_document": req.filename,
+                    "page_number": 1,
+                    "section_title": f"Section {idx+1}",
+                    "chunk_type": "text",
+                    "image_base64": None
+                })
+
+        # Embed and insert into ChromaDB
+        if chunks:
+            texts = [c["text"] for c in chunks]
+            embeds = embeddings.embed_documents(texts)
+            vector_store.delete_by_doc_id(doc_id)
+            vector_store.add_chunks(chunks, embeds)
+
+        doc_item = DocumentItem(
+            id=doc_id,
+            filename=req.filename,
+            content_type=req.content_type,
+            size_bytes=file_path.stat().st_size if file_path.exists() else len(req.text_content.encode("utf-8")),
+            page_count=max(1, max([c.get("page_number", 1) for c in chunks])) if chunks else 1,
+            chunk_count=len(chunks),
+            created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            status="indexed"
+        )
+        documents_inventory[doc_id] = doc_item
+        return doc_item
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Commit failed: {str(e)}")
+
 @app.post("/api/upload", response_model=DocumentItem)
 async def upload_document(file: UploadFile = File(...)):
     """Uploads a report, PDF, or chart image, extracts text/visual descriptions, and indexes into ChromaDB."""
     try:
         dest_path = settings.UPLOAD_DIR / file.filename
+        content = await file.read()
         with open(dest_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(content)
 
         # Parse document or visual chart
         chunks = doc_parser.parse_file(dest_path)
@@ -207,9 +326,84 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.delete("/api/documents/{doc_id}")
 async def delete_document(doc_id: str):
+    """Permanently deletes document from memory inventory, ChromaDB vector store, and physical disk storage."""
+    deleted_files = []
+    sample_dir = settings.SAMPLE_DATA_DIR
+    upload_dir = settings.UPLOAD_DIR
+
+    # 1. Delete physical file from uploads or sample_data
+    for folder in [upload_dir, sample_dir]:
+        if folder.exists():
+            for f in folder.glob("*.*"):
+                if f.stem.lower() == doc_id.lower() or f.name.lower() == doc_id.lower():
+                    try:
+                        f.unlink(missing_ok=True)
+                        deleted_files.append(str(f.name))
+                    except Exception as e:
+                        print(f"Failed to delete file {f}: {e}")
+
+    # 2. Delete from in-memory inventory
     if doc_id in documents_inventory:
         del documents_inventory[doc_id]
-    return {"status": "success", "doc_id": doc_id}
+
+    # 3. Delete from ChromaDB vector store
+    deleted_chunks = vector_store.delete_by_doc_id(doc_id)
+    return {
+        "status": "success",
+        "doc_id": doc_id,
+        "deleted_files": deleted_files,
+        "deleted_chunks": deleted_chunks
+    }
+
+@app.get("/api/documents/{doc_id}")
+async def get_document_content(doc_id: str):
+    """Returns document metadata and full text or base64 visual payload for reading."""
+    sync_document_inventory()
+    sample_dir = settings.SAMPLE_DATA_DIR
+    upload_dir = settings.UPLOAD_DIR
+    target_file = None
+    for folder in [upload_dir, sample_dir]:
+        if folder.exists():
+            for f in folder.glob("*.*"):
+                if f.stem.lower() == doc_id.lower() or f.name.lower() == doc_id.lower():
+                    target_file = f
+                    break
+        if target_file:
+            break
+
+    if not target_file or not target_file.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    ext = target_file.suffix.lower()
+    is_image = ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]
+    content_text = ""
+    image_base64 = None
+
+    if is_image:
+        import base64
+        with open(target_file, "rb") as img_f:
+            b64_str = base64.b64encode(img_f.read()).decode("utf-8")
+            image_base64 = f"data:image/{ext.replace('.', '')};base64,{b64_str}"
+        parsed_chunks = doc_parser.parse_file(target_file)
+        content_text = "\n\n".join([c["text"] for c in parsed_chunks]) if parsed_chunks else "Visual chart document exhibit."
+    else:
+        try:
+            with open(target_file, "r", encoding="utf-8", errors="ignore") as tf:
+                content_text = tf.read()
+        except Exception:
+            parsed_chunks = doc_parser.parse_file(target_file)
+            content_text = "\n\n".join([c["text"] for c in parsed_chunks]) if parsed_chunks else ""
+
+    return {
+        "id": doc_id,
+        "filename": target_file.name,
+        "content_type": ext.replace(".", ""),
+        "is_image": is_image,
+        "text_content": content_text,
+        "image_base64": image_base64,
+        "size_bytes": target_file.stat().st_size
+    }
+
 
 # 4. SQL Sandbox & Schema Explorer Endpoints (Strictly reusing Phase 1's safe read-only validator)
 @app.get("/api/sql/schema", response_model=List[TableSchemaInfo])
@@ -286,7 +480,9 @@ async def test_search_agent(req: SearchTestRequest):
     )
 
 # Static File Serving
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+FRONTEND_DIR = settings.BASE_DIR / "frontend"
+STATIC_DIR = FRONTEND_DIR if FRONTEND_DIR.exists() else (Path(__file__).resolve().parent / "static")
+
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

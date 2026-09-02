@@ -220,7 +220,7 @@ Output ONLY the raw SQL query.
             match = re.search(r'drop\s+(?:table\s+)?(\w+)', q)
             table_name = match.group(1) if match else "stock_history"
             return f"DROP TABLE {table_name}"
-        if "delete from" in q or "delete" in q and "table" in q:
+        if "delete from" in q or ("delete" in q and "table" in q):
             return "DELETE FROM stock_history WHERE ticker = 'NVDA'"
         if "insert into" in q:
             return "INSERT INTO companies (ticker, name, sector) VALUES ('FAKE', 'Fake Corp', 'Tech')"
@@ -228,6 +228,7 @@ Output ONLY the raw SQL query.
             return "UPDATE quarterly_financials SET revenue = 999 WHERE ticker = 'NVDA'"
         if "pragma" in q:
             return "PRAGMA table_info(companies)"
+
 
         # Detect ticker
         ticker = "NVDA"

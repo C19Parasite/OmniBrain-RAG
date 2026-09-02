@@ -1,5 +1,4 @@
 import chromadb
-from chromadb.config import Settings as ChromaSettings
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from ..config import settings
@@ -69,25 +68,48 @@ class ChromaVectorStore:
         self,
         query_embedding: List[float],
         top_k: int = 5,
-        chunk_type_filter: Optional[str] = None
+        chunk_type_filter: Optional[str] = None,
+        doc_ids: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         Performs cosine similarity search against multimodal chunks.
-        Returns top-k matching chunks tagged as 'text' or 'visual' with source metadata.
+        Supports filtering by chunk_type and specific document IDs.
         """
+        if not query_embedding or not any(v != 0.0 for v in query_embedding):
+            return []
+
         count = self.collection.count()
         if count == 0:
             return []
 
         actual_k = min(top_k, count)
-        where_filter = {"chunk_type": chunk_type_filter} if chunk_type_filter else None
+        
+        # Build where filter
+        where_filter = None
+        conditions = []
+        if chunk_type_filter:
+            conditions.append({"chunk_type": chunk_type_filter})
+        if doc_ids and len(doc_ids) > 0:
+            if len(doc_ids) == 1:
+                conditions.append({"doc_id": doc_ids[0]})
+            else:
+                conditions.append({"doc_id": {"$in": doc_ids}})
 
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=actual_k,
-            where=where_filter,
-            include=["documents", "metadatas", "distances"]
-        )
+        if len(conditions) == 1:
+            where_filter = conditions[0]
+        elif len(conditions) > 1:
+            where_filter = {"$and": conditions}
+
+        try:
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=actual_k,
+                where=where_filter,
+                include=["documents", "metadatas", "distances"]
+            )
+        except Exception:
+            # Fallback if where filter didn't match any documents
+            return []
 
         formatted_results = []
         if results and results.get("ids") and len(results["ids"]) > 0:
@@ -110,20 +132,39 @@ class ChromaVectorStore:
                     "chunk_type": meta.get("chunk_type", "text"),
                     "section_title": meta.get("section_title", "General"),
                     "similarity_score": similarity,
-                    "image_base64": self._image_store.get(chunk_id)
+                    "image_base64": self._image_store.get(chunk_id),
+                    "doc_id": meta.get("doc_id", "doc_0")
                 })
 
         return formatted_results
 
-    # Alias for backward compatibility
-    def search_text(self, query_embedding: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
-        return self.search_chunks(query_embedding, top_k=top_k)
+    def search_text(
+        self,
+        query_embedding: List[float],
+        top_k: int = 5,
+        doc_ids: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        return self.search_chunks(query_embedding, top_k=top_k, doc_ids=doc_ids)
 
     def add_text_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> int:
         return self.add_chunks(chunks, embeddings)
 
     def count(self) -> int:
         return self.collection.count()
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """Deletes all chunks matching doc_id from the vector store."""
+        try:
+            results = self.collection.get(where={"doc_id": doc_id})
+            if results and results.get("ids"):
+                ids_to_del = results["ids"]
+                self.collection.delete(ids=ids_to_del)
+                for cid in ids_to_del:
+                    self._image_store.pop(cid, None)
+                return len(ids_to_del)
+        except Exception:
+            pass
+        return 0
 
     def clear(self):
         self._image_store.clear()

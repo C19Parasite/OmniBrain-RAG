@@ -1,0 +1,60 @@
+# =========================================================
+# OmniBrain Studio .gitignore
+# =========================================================
+
+# Environment variables & secrets (Never commit .env)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python & bytecode cache
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# ChromaDB & Persistent Vector Storage
+chroma_db/*
+!chroma_db/.gitkeep
+vector_store/
+data/vector_store/
+*.chroma
+
+# SQLite databases
+*.sqlite
+*.sqlite3
+*.db
+backend/app/financial_data.db
+data/financial_data.db
+
+# User uploads (keep directory, ignore contents)
+data/uploads/*
+!data/uploads/.gitkeep
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+logs/

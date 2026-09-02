@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent
     DATA_DIR: Path = BASE_DIR / "data"
     DB_PATH: Path = DATA_DIR / "financial_data.db"
-    VECTOR_STORE_DIR: Path = DATA_DIR / "vector_store"
+    VECTOR_STORE_DIR: Path = BASE_DIR / "chroma_db"
     UPLOAD_DIR: Path = DATA_DIR / "uploads"
+    SAMPLE_DATA_DIR: Path = DATA_DIR / "sample_data"
 
     # API Keys
     GEMINI_API_KEY: str = ""

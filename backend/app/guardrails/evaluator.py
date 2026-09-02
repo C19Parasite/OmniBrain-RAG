@@ -94,7 +94,11 @@ class GuardrailEvaluator:
             # Ignore headers, dividers, empty lines, and metadata
             if not clean or clean.startswith("#") or clean.startswith("---") or clean.startswith("==="):
                 continue
-            if clean.lower().startswith("**query**:") or clean.lower().startswith("**prepared by**:") or clean.lower().startswith("query:") or clean.lower().startswith("prepared by:"):
+            if any(clean.lower().startswith(prefix) for prefix in [
+                "**query**:", "query:", "**prepared by**:", "prepared by:",
+                "**indexed sources**:", "indexed sources:", "**status**:", "status:",
+                "> \"", ">"
+            ]):
                 continue
             if ":---" in clean or "--- | ---" in clean:
                 continue

@@ -7,6 +7,7 @@ class SearchAgent:
     """
     Semantic Vector Search Agent for Text-based Financial RAG.
     Embeds incoming queries and retrieves top-k chunks with rich source metadata.
+    Supports filtering by specific document IDs.
     """
 
     def __init__(
@@ -17,7 +18,12 @@ class SearchAgent:
         self.embeddings = embeddings or TextEmbeddings()
         self.vector_store = vector_store or ChromaVectorStore()
 
-    def search(self, query: str, top_k: Optional[int] = None) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        top_k: Optional[int] = None,
+        doc_ids: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Executes semantic vector search for a natural language query.
         Returns top-k matching text chunks with source document, page, and similarity scores.
@@ -30,10 +36,11 @@ class SearchAgent:
         # 1. Embed query
         query_vector = self.embeddings.embed_text(query)
 
-        # 2. Query ChromaDB vector store
+        # 2. Query ChromaDB vector store with optional doc_ids filter
         results = self.vector_store.search_text(
             query_embedding=query_vector,
-            top_k=k
+            top_k=k,
+            doc_ids=doc_ids
         )
 
         return results

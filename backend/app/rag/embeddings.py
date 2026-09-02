@@ -1,6 +1,7 @@
 import hashlib
 import json
 import math
+import re
 import urllib.request
 import urllib.error
 import numpy as np
@@ -13,7 +14,7 @@ class TextEmbeddings:
     Supports:
     1. Google Gemini Embeddings ('text-embedding-004')
     2. OpenAI Embeddings ('text-embedding-3-small')
-    3. Deterministic high-precision dense semantic projection (Offline / Zero-Key mode)
+    3. High-precision semantic subword + token frequency hash embedding (Offline / Zero-Key mode)
     """
 
     def __init__(
@@ -44,7 +45,10 @@ class TextEmbeddings:
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed multiple text strings."""
+        if not texts:
+            return []
         return [self.embed_text(t) for t in texts]
+
 
     def _embed_gemini(self, text: str) -> List[float]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={settings.GEMINI_API_KEY}"
@@ -86,57 +90,43 @@ class TextEmbeddings:
 
     def _embed_local(self, text: str) -> List[float]:
         """
-        High-precision multi-scale n-gram and domain concept semantic projection.
-        Ensures consistent cosine clustering across financial and technical terminology.
+        High-precision multi-scale token, n-gram, and subword hash projection.
+        Guarantees unbiased cosine similarity for any document (technical, financial, research, PDF).
         """
         clean = text.lower().strip()
-        words = clean.split()
+        tokens = re.findall(r'\b\w+\b', clean)
+        if not tokens:
+            tokens = [clean]
+
         vec = np.zeros(self.dimension, dtype=np.float32)
 
-        # Financial & corporate domain concept cluster weights
-        domain_clusters = {
-            "datacenter": [1, 14, 45, 88, 120, 210],
-            "data center": [1, 14, 45, 88, 120, 210],
-            "demand": [2, 18, 55, 92, 130, 215],
-            "blackwell": [3, 22, 60, 99, 140, 220],
-            "hopper": [4, 25, 65, 105, 145, 225],
-            "revenue": [5, 28, 70, 110, 150, 230],
-            "margin": [6, 30, 75, 115, 155, 235],
-            "guidance": [7, 32, 80, 118, 160, 240],
-            "management": [8, 35, 85, 122, 165, 245],
-            "nvidia": [9, 38, 90, 125, 170, 250],
-            "nvda": [9, 38, 90, 125, 170, 250],
-            "apple": [10, 40, 95, 128, 175, 255],
-            "aapl": [10, 40, 95, 128, 175, 255],
-            "microsoft": [11, 42, 100, 132, 180, 260],
-            "msft": [11, 42, 100, 132, 180, 260],
-            "azure": [12, 44, 102, 135, 185, 265],
-            "cloud": [13, 46, 104, 138, 190, 270],
-            "ai": [1, 14, 22, 45, 88, 140],
-            "gpu": [1, 3, 4, 14, 45, 88],
-            "growth": [5, 18, 28, 70, 110, 150]
-        }
+        # 1. Word token projections with Murmur/MD5 hashing
+        token_counts = {}
+        for t in tokens:
+            token_counts[t] = token_counts.get(t, 0) + 1
 
-        for word in words:
-            # Word MD5 hash distribution
-            h = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
-            for i in range(6):
-                idx = (h >> (i * 5)) % self.dimension
-                sign = 1.0 if ((h >> (i * 5 + 3)) % 2 == 0) else -1.0
-                vec[idx] += sign * 1.0
+        for token, count in token_counts.items():
+            tf_weight = 1.0 + math.log(count)
+            # Hash into multiple dimensions
+            h1 = int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16)
+            h2 = int(hashlib.sha1(token.encode("utf-8")).hexdigest(), 16)
 
-        for concept, dims in domain_clusters.items():
-            if concept in clean:
-                for d in dims:
-                    vec[d % self.dimension] += 3.5
+            for i in range(8):
+                idx = (h1 >> (i * 4)) % self.dimension
+                sign = 1.0 if ((h2 >> (i * 3)) % 2 == 0) else -1.0
+                vec[idx] += sign * tf_weight * 2.0
 
-        # Character tri-grams for typo resilience
-        for i in range(len(clean) - 3):
-            trigram = clean[i:i+3]
-            h = int(hashlib.sha256(trigram.encode("utf-8")).hexdigest(), 16) % self.dimension
-            vec[h] += 0.15
+        # 2. Subword character n-grams (3-grams and 4-grams) for robust semantic & keyword matching
+        for n in [3, 4]:
+            if len(clean) >= n:
+                for i in range(len(clean) - n + 1):
+                    ngram = clean[i:i+n]
+                    h = int(hashlib.sha256(ngram.encode("utf-8")).hexdigest(), 16)
+                    idx = h % self.dimension
+                    sign = 1.0 if ((h >> 8) % 2 == 0) else -1.0
+                    vec[idx] += sign * 0.35
 
-        # Normalize
+        # 3. Normalize
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm

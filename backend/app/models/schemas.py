@@ -25,6 +25,25 @@ class DocumentItem(BaseModel):
     created_at: str = ""
     status: str = "indexed"
 
+class UploadPreviewResponse(BaseModel):
+    doc_id: str
+    filename: str
+    content_type: str
+    size_bytes: int = 0
+    page_count: int = 1
+    chunk_count: int = 0
+    is_image: bool = False
+    image_base64: Optional[str] = None
+    extracted_text: str
+
+class CommitUploadRequest(BaseModel):
+    doc_id: str
+    filename: str
+    content_type: str
+    text_content: str
+    image_base64: Optional[str] = None
+    attach_to_chat: bool = True
+
 # --- SQL Explorer Schemas ---
 
 class ColumnInfo(BaseModel):
@@ -83,7 +102,9 @@ class QueryRequest(BaseModel):
     query: str
     top_k: Optional[int] = None
     temperature: Optional[float] = None
-    api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None
+    document_ids: Optional[List[str]] = None  # Specific document context for this chat
 
 class QueryResponse(BaseModel):
     query: str
@@ -116,6 +137,7 @@ class SQLTestResponse(BaseModel):
 class SearchTestRequest(BaseModel):
     query: str
     top_k: Optional[int] = None
+    document_ids: Optional[List[str]] = None
 
 class TextChunkResult(BaseModel):
     id: str

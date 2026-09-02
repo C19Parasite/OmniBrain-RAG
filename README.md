@@ -188,6 +188,23 @@ pytest
 
 ---
 
+## 👥 Contributors
+
+- **Udipta Ray**
+- **Kalash Jain**
+- **Vansh Teotia**
+- **Aaryan Rathi**
+- **Tushar Kumar Pradhan**
+- **Rajeshwari Chetlapalli**
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please open an issue to discuss proposed changes or features before submitting a pull request.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

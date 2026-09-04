@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniBrain: Agentic Multi-Modal RAG Orchestrator | Axlero Solutions</title>
+  <link rel="stylesheet" href="/static/style.css?v=5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Space+Grotesk:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+  <!-- ========================================================= -->
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <!-- ========================================================= -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 1: LANDING PAGE (DIRECT FROM AXLERO SOLUTIONS SPEC) -->
+  <!-- ========================================================= -->
+  <div id="view-landing" class="landing-page-view">
+    
+    <!-- Landing Header -->
+    <header class="landing-nav">
+      <div class="landing-brand">
+        <span class="brand-symbol">◈</span>
+        <div class="brand-col">
+          <span class="brand-name">AXLERO SOLUTIONS</span>
+          <span class="brand-sub">ADVANCED DATA SCIENCE &amp; ML ENGINEERING</span>
+        </div>
+      </div>
+      <div class="landing-nav-actions">
+      </div>
+    </header>
+
+    <!-- Landing Main Content -->
+    <main class="landing-body">
+      
+      <!-- Hero Section -->
+      <section class="landing-hero">
+        <div class="landing-tag">PROJECT 1 — LARGE LANGUAGE MODELS (LLMS) &amp; AGENTIC AI</div>
+        
+        <h1 class="landing-title">
+          <span class="landing-title-main"><em>OmniBrain</em></span>
+          <span class="landing-title-sub">Agentic Multi-Modal RAG Orchestrator</span>
+        </h1>
+
+        <p class="landing-description">
+          Standard Retrieval-Augmented Generation (RAG) pipelines fail when documents contain complex multimodal data (like financial tables, embedded charts, and images) or when queries require multi-step reasoning across diverse data silos.
+        </p>
+
+        <div class="landing-use-case-box">
+          <div class="use-case-label">ENTERPRISE USE CASE:</div>
+          <p class="use-case-text">
+            A quantitative analyst feeds a 500-page corporate financial PDF into OmniBrain. Using a <strong>LangGraph supervisor agent</strong>, the system dynamically routes tasks. It parses tables using a <strong>Vision-Language Model (VLM)</strong>, queries a <strong>vector database (ChromaDB / Qdrant)</strong> for semantic text, and uses a <strong>Text-to-SQL agent</strong> to query historical stock data. The agents collaboratively synthesize the findings and output a highly accurate, cited investment memo, completely bypassing the hallucination risks of standard LLMs.
+          </p>
+        </div>
+
+        <div class="landing-cta-group">
+          <button class="btn-primary-large" id="startAskingBtn" onclick="window.showWorkspace && window.showWorkspace()">
+            <span>Start Asking</span>
+            <span class="cta-arrow">➔</span>
+          </button>
+          <div class="landing-badge-row">
+            <span class="badge-item">✓ LangGraph Agentic Orchestrator</span>
+            <span class="badge-item">✓ Multi-Modal CLIP Vector Retrieval</span>
+            <span class="badge-item">✓ GPT-4o / LLaVA Vision Model</span>
+            <span class="badge-item">✓ NeMo &amp; Langfuse Guardrails</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Key Architecture Modules Grid (From PDF Specification) -->
+      <section class="landing-features-grid">
+        
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>Agentic Orchestrator</h3>
+          <div class="module-tech">LangGraph State Machine</div>
+          <p>Manages the state, memory, and routing of multiple specialized AI agents (Search Agent, SQL Agent, Vision Agent) with explicit planning.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🗄️</div>
+          <h3>Multi-Modal Retrieval</h3>
+          <div class="module-tech">ChromaDB / Qdrant / FAISS</div>
+          <p>Stores both dense text chunks and image embeddings (using CLIP / multimodal encoders) for fine-grained semantic similarity search.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">👁️</div>
+          <h3>Vision-Language Model</h3>
+          <div class="module-tech">GPT-4o / Gemini / LLaVA</div>
+          <p>Extracts, transcribes, and reasons over visual balance sheets, segment bar charts, and performance graphs embedded in documents.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3>Evaluation &amp; Guardrails</h3>
+          <div class="module-tech">NeMo Guardrails &amp; LLM-as-Judge</div>
+          <p>Sentence-level hallucination verification and toxicity auditing ensuring all synthesized investment memos are strictly grounded in retrieved evidence.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Self-Correction Loop</h3>
+          <div class="module-tech">Self-RAG Loop</div>
+          <p>Recognizes low-relevance retrieval failures, autonomously rewrites search queries, and re-executes search before responding.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Structured Text-to-SQL</h3>
+          <div class="module-tech">Read-Only SQLite Engine</div>
+          <p>Converts quantitative questions into safe, allowlist-validated SQL queries over financial balance sheets and analyst estimates.</p>
+        </div>
+
+      </section>
+
+      <!-- Contributors Section -->
+      <section class="landing-contributors-section">
+        <div class="section-label-center">RESEARCH &amp; ENGINEERING TEAM</div>
+        <h2 class="contributors-title">Project Contributors</h2>
+        <div class="contributors-grid">
+          <div class="contributor-card">
+            <div class="contributor-avatar">UR</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Udipta Ray</span>
+              <span class="contributor-role">Core Architecture &amp; RAG</span>
+            </div>
+          </div>
+
+          <div class="contributor-card">
+            <div class="contributor-avatar">KJ</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Kalash Jain</span>
+              <span class="contributor-role">Agent Orchestration</span>
+            </div>
+          </div>
+
+          <div class="contributor-card">
+            <div class="contributor-avatar">VT</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Vansh Teotia</span>
+              <span class="contributor-role">Vision &amp; Multimodal Ingestion</span>
+            </div>
+          </div>
+
+          <div class="contributor-card">
+            <div class="contributor-avatar">AR</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Aaryan Rathi</span>
+              <span class="contributor-role">Text-to-SQL &amp; Database</span>
+            </div>
+          </div>
+
+          <div class="contributor-card">
+            <div class="contributor-avatar">TP</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Tushar Kumar Pradhan</span>
+              <span class="contributor-role">Guardrails &amp; Hallucination Audit</span>
+            </div>
+          </div>
+
+          <div class="contributor-card">
+            <div class="contributor-avatar">RC</div>
+            <div class="contributor-info">
+              <span class="contributor-name">Rajeshwari Chetlapalli</span>
+              <span class="contributor-role">Evaluation &amp; Synthesis</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="landing-footer">
+      <div>OmniBrain: Agentic Multi-Modal RAG Orchestrator | Axlero Solutions</div>
+      <div>Bleeding-edge AI Portfolio — Hands-on Enterprise System Building</div>
+    </footer>
+
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 2: MAIN WORKSPACE (CLAUDE / CHATGPT STYLE) -->
+  <!-- ========================================================= -->
+  <div id="view-workspace" class="workspace-layout" style="display: none;">
+
+    <!-- Left Sidebar (Claude / ChatGPT Style) -->
+    <aside class="app-sidebar" id="appSidebar">
+      
+      <!-- Sidebar Header -->
+      <div class="sidebar-header">
+        <div class="sidebar-brand" id="sidebarReturnHome" title="Return to Landing Page" onclick="window.showLandingPage && window.showLandingPage()">
+          <span class="brand-symbol">◈</span>
+          <div class="sidebar-brand-text">
+            <span class="brand-text">OmniBrain</span>
+            <span class="brand-sub-mini">Axlero Solutions</span>
+          </div>
+        </div>
+        <button class="sidebar-toggle-btn" id="sidebarCloseBtn" title="Close Sidebar">✕</button>
+      </div>
+
+      <!-- New Chat Button -->
+      <div class="sidebar-action-box">
+        <button class="btn-new-chat" id="newChatBtn">
+          <span class="plus-icon">+</span>
+          <span>New Analysis</span>
+        </button>
+      </div>
+
+      <!-- Scrollable Sidebar Content (Custom Seamless Scrollbar) -->
+      <div class="sidebar-scrollable-content custom-scroll">
+        
+        <!-- Knowledge & Document Storage Area -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-header">
+            <span class="section-title-sm">PROJECT KNOWLEDGE</span>
+            <span class="doc-badge" id="sidebarDocCountBadge">0 files</span>
+          </div>
+
+          <!-- Upload Document Button (Replaces static white box with popup trigger) -->
+          <button class="btn-sidebar-upload" id="openUploadModalBtn">
+            <span class="upload-icon">📎</span>
+            <span>Upload Document</span>
+          </button>
+
+          <!-- Document Search / Filter Input -->
+          <div class="sidebar-search-wrap">
+            <input type="text" id="sidebarDocSearchInput" class="sidebar-search-input" placeholder="Filter files (e.g. NVDA, .pdf)...">
+          </div>
+
+          <!-- Uploaded Documents Mini List with Click-to-Read -->
+          <div class="sidebar-doc-list custom-scroll" id="sidebarDocList">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+
+        <!-- Chat History List -->
+        <div class="sidebar-section history-section">
+          <div class="sidebar-section-header">
+            <span class="section-title-sm">RECENT ANALYSES</span>
+            <button class="btn-text-clear" id="clearHistoryBtn" title="Clear all history">Clear</button>
+          </div>
+          <div class="history-list custom-scroll" id="chatHistoryList">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sidebar Footer / Settings -->
+      <div class="sidebar-footer">
+        <button class="sidebar-footer-btn" id="openSettingsBtn">
+          <span class="footer-icon">⚙️</span>
+          <span>Settings &amp; Keys</span>
+        </button>
+        <button class="sidebar-footer-btn return-landing-btn" id="sidebarLandingBtn" onclick="window.showLandingPage && window.showLandingPage()">
+          <span class="footer-icon">🏠</span>
+          <span>Project Overview</span>
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- Main Workspace Content -->
+    <main class="workspace-main">
+      
+      <!-- Top Bar -->
+      <header class="workspace-top-bar">
+        <div class="top-bar-left">
+          <button class="sidebar-open-btn" id="sidebarOpenBtn" title="Toggle Sidebar">☰</button>
+          <div class="session-title-wrap">
+            <h2 class="active-session-title" id="activeSessionTitle">New Financial Analysis</h2>
+            <div class="session-doc-context-indicator" id="sessionDocContextIndicator">
+              <span class="context-icon">📎</span>
+              <span id="sessionDocContextLabel">Context: All Indexed Documents</span>
+            </div>
+          </div>
+        </div>
+        <div class="top-bar-right">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span id="workspaceEngineStatus">Agents Active</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Chat / Memo Stream Container (Custom Seamless Scrollbar) -->
+      <div class="conversation-stream-container custom-scroll" id="conversationStreamContainer">
+        
+        <!-- Welcome Prompt State (when no active memo is rendered, suggestions removed) -->
+        <div class="stream-welcome-card" id="streamWelcomeCard">
+          <div class="welcome-symbol">◈</div>
+          <h1 class="welcome-headline">OmniBrain Multimodal Intelligence</h1>
+          <p class="welcome-byline">
+            Agentic multi-modal RAG routing queries across structured Text-to-SQL, dense corporate filing vectors, and vision-language chart exhibits.
+          </p>
+
+          <!-- Chat Document Context Selector -->
+          <div class="chat-doc-selector-card">
+            <div class="selector-header">
+              <span class="selector-title">SELECT DOCUMENT CONTEXT FOR THIS CHAT:</span>
+              <span class="selector-hint" id="chatDocSelectionSummary">All Documents Selected</span>
+            </div>
+            <div class="chat-doc-chips" id="chatDocChipsContainer">
+              <!-- Dynamically populated with document checkbox chips -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Multi-Turn Chat Message Stream -->
+        <div class="chat-message-stream" id="chatMessageStream">
+          <!-- Dynamically populated with multi-query message turns -->
+        </div>
+
+        <!-- Live Orchestration Status Banner (Shown during active queries) -->
+        <div class="orchestration-flow-card" id="orchestrationFlowCard" style="display: none; width: 100%; max-width: 860px; margin: 12px 0;">
+          <div class="orchestration-header">
+            <span class="card-caption">MULTI-AGENT LANGGRAPH PIPELINE</span>
+            <span class="orchestration-status" id="orchestrationStatusLabel">Supervisor Planning...</span>
+          </div>
+          <div class="pipeline-nodes-row">
+            <div class="pipe-node" id="pnode-Supervisor"><span class="pnode-num">1</span><span class="pnode-name">Supervisor</span></div>
+            <div class="pipe-node" id="pnode-SQLAgent"><span class="pnode-num">2</span><span class="pnode-name">Text-to-SQL</span></div>
+            <div class="pipe-node" id="pnode-SearchAgent"><span class="pnode-num">3</span><span class="pnode-name">Text RAG</span></div>
+            <div class="pipe-node" id="pnode-VisionAgent"><span class="pnode-num">4</span><span class="pnode-name">Vision VLM</span></div>
+            <div class="pipe-node" id="pnode-Synthesizer"><span class="pnode-num">5</span><span class="pnode-name">Synthesizer</span></div>
+            <div class="pipe-node" id="pnode-GuardrailEvaluator"><span class="pnode-num">6</span><span class="pnode-name">NeMo Audit</span></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modern Floating Prompt Input Area (Claude / ChatGPT style) -->
+      <div class="workspace-input-wrapper">
+        <div class="prompt-box-container">
+          
+          <button class="btn-attach-file" id="promptAttachBtn" title="Upload or Attach Document / Chart to this chat">
+            <span>📎</span>
+          </button>
+
+          <textarea 
+            id="workspacePromptInput" 
+            class="prompt-textarea" 
+            placeholder="Ask a question across attached filings, SQL data, and visual charts..."
+            rows="1"
+          ></textarea>
+
+          <button id="workspaceSubmitBtn" class="btn-submit-prompt" title="Run Multimodal Analysis">
+            <span class="submit-arrow">➔</span>
+          </button>
+        </div>
+        <div class="prompt-footer-hint">
+          OmniBrain dynamically routes queries across LangGraph agents, ChromaDB vector store, and Vision models with NeMo guardrails.
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: UPLOAD DOCUMENT (WITH PREVIEW, EDIT & CONTEXT SUBMIT) -->
+  <!-- ========================================================= -->
+  <div class="modal-backdrop" id="uploadModal">
+    <div class="modal-sheet upload-modal-sheet">
+      <div class="modal-top">
+        <div class="modal-title-group">
+          <span class="modal-type-tag" id="uploadModalTag">INGEST</span>
+          <h4 id="uploadModalHeading">Upload Document or Visual Chart</h4>
+        </div>
+        <button class="modal-close-btn" id="closeUploadModalBtn">✕</button>
+      </div>
+      
+      <div class="modal-main">
+        <!-- Stage 1: File Dropzone -->
+        <div id="uploadStageDropzone">
+          <div class="modal-dropzone" id="modalUploadDropzone">
+            <div class="modal-drop-icon">📄</div>
+            <div class="modal-drop-title">Drop financial reports, filings, or charts here</div>
+            <div class="modal-drop-sub">Supported formats: PDF, Markdown (.md), Plain Text (.txt), PNG, JPG, JPEG, SVG</div>
+            <button class="btn-primary-modal" style="max-width: 220px; margin-top: 14px;" onclick="document.getElementById('modalFileInput').click()">Browse Files</button>
+            <input type="file" id="modalFileInput" style="display: none;" accept=".pdf,.png,.jpg,.jpeg,.svg,.md,.txt">
+          </div>
+          <div class="upload-status-info" id="modalUploadStatusInfo"></div>
+        </div>
+
+        <!-- Stage 2: Staging Preview, Text Editor & Context Option -->
+        <div id="uploadStagePreview" style="display: none;">
+          <div class="doc-reader-meta-bar" id="uploadPreviewMeta">
+            <!-- Metadata filled dynamically -->
+          </div>
+
+          <div id="uploadPreviewImgContainer" style="display: none; margin-bottom: 12px;">
+            <img id="uploadPreviewImg" src="" alt="Chart exhibit" class="doc-reader-img-preview" style="max-height: 200px; object-fit: contain;">
+          </div>
+
+          <div class="form-field">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label style="font-weight: 700; color: var(--text-primary); font-size: 12px;">Extracted Document Output (Review &amp; Edit Text):</label>
+              <span style="font-size: 10.5px; color: var(--text-muted);">You can edit or refine text before indexing</span>
+            </div>
+            <textarea id="uploadPreviewTextarea" class="input-editorial upload-edit-textarea" rows="10" placeholder="Extracted text content will appear here..."></textarea>
+          </div>
+
+          <div class="upload-context-option">
+            <label class="checkbox-label">
+              <input type="checkbox" id="uploadAttachToChatCheckbox" checked>
+              <span>Attach this document directly to the current chat context</span>
+            </label>
+          </div>
+
+          <div class="modal-actions-row">
+            <button class="btn-outline-landing" id="cancelUploadPreviewBtn">Back / Discard</button>
+            <button class="btn-primary-modal" id="commitUploadBtn">Submit &amp; Commit to Knowledge Base ➔</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: DOCUMENT READER / VIEWER (READ DOCUMENT CONTENT) -->
+  <!-- ========================================================= -->
+  <div class="modal-backdrop" id="docReaderModal">
+    <div class="modal-sheet doc-reader-modal-sheet">
+      <div class="modal-top">
+        <div class="modal-title-group">
+          <span class="modal-type-tag" id="readerDocTypeTag">DOCUMENT</span>
+          <h4 id="readerDocTitle">Document Viewer</h4>
+        </div>
+        <button class="modal-close-btn" id="closeDocReaderModalBtn">✕</button>
+      </div>
+      
+      <div class="modal-main" id="readerDocBody">
+        <!-- Content dynamically injected -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: SETTINGS & CONFIGURATION -->
+  <!-- ========================================================= -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-sheet settings-modal-sheet">
+      <div class="modal-top">
+        <div class="modal-title-group">
+          <span class="modal-type-tag">CONFIG</span>
+          <h4>System Settings &amp; Providers</h4>
+        </div>
+        <button class="modal-close-btn" id="closeSettingsModalBtn">✕</button>
+      </div>
+      
+      <div class="modal-main">
+        <div class="form-field">
+          <label>Top-K Retrieval</label>
+          <input type="number" id="settingTopK" value="5" min="1" max="20" class="input-editorial">
+          <span class="hint-text">Number of semantic text/visual chunks retrieved per query.</span>
+        </div>
+
+        <div class="form-field">
+          <label>Model Generation Temperature</label>
+          <input type="number" id="settingTemperature" value="0.2" step="0.1" min="0.0" max="1.0" class="input-editorial">
+          <span class="hint-text">Lower values ensure high factual precision.</span>
+        </div>
+
+        <div class="form-field">
+          <label>Google Gemini API Key (Optional)</label>
+          <input type="password" id="settingGeminiKey" placeholder="AIzaSy..." class="input-editorial">
+          <span class="hint-text">Used for Gemini Vision and memo synthesis.</span>
+        </div>
+
+        <div class="form-field">
+          <label>OpenAI API Key (Optional)</label>
+          <input type="password" id="settingOpenAIKey" placeholder="sk-..." class="input-editorial">
+          <span class="hint-text">Used for GPT-4o Vision and OpenAI embeddings.</span>
+        </div>
+
+        <button class="btn-primary-modal" id="saveSettingsBtn">Save Settings</button>
+
+        <div class="settings-divider"></div>
+
+        <div class="form-field">
+          <label>Reset Demo Environment</label>
+          <p class="hint-text" style="margin-bottom: 8px;">Re-seed synthetic SQLite database records and re-index demo filings.</p>
+          <button class="btn-outline-danger" id="resetDemoDataBtn">Reset Database &amp; Vector Store</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: CITATION EVIDENCE VIEWER -->
+  <!-- ========================================================= -->
+  <div class="modal-backdrop" id="citationModal">
+    <div class="modal-sheet">
+      <div class="modal-top">
+        <div class="modal-title-group">
+          <span class="modal-type-tag" id="modalCitationTypePill">[SQL]</span>
+          <h4 id="modalCitationTitle">Primary Evidence</h4>
+        </div>
+        <button class="modal-close-btn" id="closeCitationModalBtn">✕</button>
+      </div>
+      <div class="modal-main" id="modalCitationBody"></div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- FLOATING CITATION EVIDENCE HOVER TOOLTIP CARD -->
+  <!-- ========================================================= -->
+  <div id="citationHoverTooltip" class="citation-hover-tooltip" style="display: none;">
+    <div class="tooltip-badge-row">
+      <span class="tooltip-type-pill" id="tooltipTypePill">SOURCE</span>
+      <span class="tooltip-title" id="tooltipTitle">Evidence Snippet</span>
+    </div>
+    <div class="tooltip-content" id="tooltipContent"></div>
+    <div class="tooltip-hint">Click badge to inspect full document exhibit ↗</div>
+  </div>
+
+  <!-- Main Application JavaScript -->
+  <script src="/static/app.js?v=6"></script>
+</body>
+</html>

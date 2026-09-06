@@ -133,6 +133,9 @@ async def run_query(req: QueryRequest):
     """
     state = supervisor.process_query(
         req.query,
+        thread_id=req.thread_id,
+        top_k=req.top_k,
+        temperature=req.temperature,
         document_ids=req.document_ids,
         gemini_api_key=req.gemini_api_key,
         openai_api_key=req.openai_api_key

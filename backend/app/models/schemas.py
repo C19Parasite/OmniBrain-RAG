@@ -100,6 +100,7 @@ class GuardrailReport(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
+    thread_id: Optional[str] = None
     top_k: Optional[int] = None
     temperature: Optional[float] = None
     gemini_api_key: Optional[str] = None

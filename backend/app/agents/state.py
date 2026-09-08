@@ -32,6 +32,9 @@ class SupervisorState(BaseModel):
     guardrail_report: Dict[str, Any] = Field(default_factory=dict)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
     execution_time_seconds: float = 0.0
+    # Compact, cited turn summaries only. Full documents and raw images remain
+    # in the RAG stores; they must never be copied into conversational memory.
+    conversation_history: List[Dict[str, Any]] = Field(default_factory=list)
 
     def add_trace(self, event_type: str, agent: str, content: str, metadata: Optional[Dict[str, Any]] = None):
         """Helper to append an execution trace event."""

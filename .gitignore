@@ -50,6 +50,14 @@ data/uploads/*
 .DS_Store
 Thumbs.db
 
+# Virtual environments
+venv/
+.env
+.env.*
+!.env.example
+
+data/uploads/
+
 # Testing & Coverage
 .pytest_cache/
 .coverage

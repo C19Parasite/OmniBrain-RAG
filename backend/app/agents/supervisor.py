@@ -1,15 +1,43 @@
 import re
 import json
 import time
+import sqlite3
+from uuid import uuid4
 import urllib.request
 import urllib.error
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TypedDict
+from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.runtime import Runtime
+
+try:
+    from langgraph.checkpoint.sqlite import SqliteSaver
+except ImportError:  # Allows a clear development fallback before dependencies are installed.
+    SqliteSaver = None
 from ..config import settings
 from .state import SupervisorState, SubTask
 from .sql_agent import TextToSQLAgent as SQLAgent
 from .search_agent import SearchAgent
 from .vision_agent import VisionAgent
 from ..guardrails.evaluator import GuardrailEvaluator
+from ..observability.langfuse import observe, update as update_observation, flush as flush_langfuse
+
+
+class _ConversationGraphState(TypedDict, total=False):
+    """Persisted graph channels. API keys are intentionally excluded."""
+    query: str
+    top_k: Optional[int]
+    temperature: Optional[float]
+    document_ids: Optional[List[str]]
+    conversation_history: List[Dict[str, Any]]
+    result: Dict[str, Any]
+
+
+class _RequestContext(TypedDict, total=False):
+    """Per-request values that LangGraph does not checkpoint."""
+    gemini_api_key: Optional[str]
+    openai_api_key: Optional[str]
+
 
 class SupervisorOrchestrator:
     """
@@ -32,13 +60,102 @@ class SupervisorOrchestrator:
         self.search_agent = search_agent or SearchAgent()
         self.vision_agent = vision_agent or VisionAgent()
         self.evaluator = evaluator or GuardrailEvaluator()
+        self.checkpointer = self._create_checkpointer()
+        self.graph = self._build_graph()
 
-    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None) -> SupervisorState:
+    def _create_checkpointer(self):
+        """Create durable thread memory, with an in-process fallback for local dev."""
+        if SqliteSaver is not None:
+            settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            # Keep this connection open for the lifespan of the FastAPI process.
+            # check_same_thread=False is required because sync FastAPI work may
+            # execute in different worker threads.
+            self._checkpoint_connection = sqlite3.connect(
+                str(settings.DATA_DIR / "langgraph_checkpoints.sqlite"),
+                check_same_thread=False,
+            )
+            return SqliteSaver(self._checkpoint_connection)
+        print("[OmniBrain] langgraph-checkpoint-sqlite is not installed; using non-persistent memory.")
+        return InMemorySaver()
+
+    def _build_graph(self):
+        """Compile a checkpointed LangGraph workflow for a single chat thread."""
+        builder = StateGraph(_ConversationGraphState, context_schema=_RequestContext)
+        builder.add_node("research", self._run_research_turn)
+        builder.add_edge(START, "research")
+        builder.add_edge("research", END)
+        return builder.compile(checkpointer=self.checkpointer)
+
+    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, thread_id: Optional[str] = None) -> SupervisorState:
+        """Run a query in a checkpointed LangGraph conversation thread."""
+        # Legacy clients that do not send a thread ID must not accidentally
+        # share memory with another request.
+        thread_id = thread_id or str(uuid4())
+        with observe(
+            "OmniBrain Supervisor",
+            "agent",
+            input={"query": query, "document_ids": document_ids},
+            metadata={"thread_id": thread_id, "environment": settings.LANGFUSE_ENVIRONMENT},
+        ) as root_observation:
+            graph_state = self.graph.invoke(
+                {
+                    "query": query,
+                    "top_k": top_k,
+                    "temperature": temperature,
+                    "document_ids": document_ids,
+                },
+                {"configurable": {"thread_id": thread_id}},
+                context={"gemini_api_key": gemini_api_key, "openai_api_key": openai_api_key},
+            )
+            result = SupervisorState.model_validate(graph_state["result"])
+            update_observation(
+                root_observation,
+                output={"memo_characters": len(result.synthesized_memo or "")},
+                metadata={
+                    "thread_id": thread_id,
+                    "environment": settings.LANGFUSE_ENVIRONMENT,
+                    "grounding_score": result.guardrail_report.get("overall_score"),
+                    "grounding_status": result.guardrail_report.get("status"),
+                    "citation_count": len(result.citations),
+                },
+            )
+        flush_langfuse()
+        return result
+
+    def _run_research_turn(self, graph_state: "_ConversationGraphState", runtime: Runtime[_RequestContext]) -> Dict[str, Any]:
+        """Use the previous checkpoint only as context, never as uncited evidence."""
+        history = list(graph_state.get("conversation_history", []))[-6:]
+        state = self._process_query_once(
+            query=graph_state["query"],
+            top_k=graph_state.get("top_k"),
+            temperature=graph_state.get("temperature"),
+            document_ids=graph_state.get("document_ids"),
+            gemini_api_key=(runtime.context or {}).get("gemini_api_key"),
+            openai_api_key=(runtime.context or {}).get("openai_api_key"),
+            conversation_history=history,
+        )
+        turn = {
+            "user_query": state.query,
+            "assistant_memo": (state.synthesized_memo or "")[:4000],
+            "document_ids": graph_state.get("document_ids"),
+            "citations": [
+                {key: citation.get(key) for key in ("source_type", "source_name", "page_number")}
+                for citation in state.citations
+            ],
+        }
+        updated_history = (history + [turn])[-6:]
+        state.conversation_history = updated_history
+        return {
+            "result": state.model_dump(mode="json"),
+            "conversation_history": updated_history,
+        }
+
+    def _process_query_once(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None) -> SupervisorState:
         """
         Executes end-to-end multi-agent LangGraph workflow.
         """
         start_time = time.time()
-        state = SupervisorState(query=query)
+        state = SupervisorState(query=query, conversation_history=conversation_history or [])
 
         # -------------------------------------------------------------
         # CHECK: NO DOCUMENT ATTACHED
@@ -77,7 +194,7 @@ class SupervisorOrchestrator:
             content=f"Received query: '{query}'. Evaluating intent, decomposing sub-tasks, and determining agent routing."
         )
 
-        sub_tasks = self._decompose_query(query)
+        sub_tasks = self._decompose_query(self._query_with_memory(query, state.conversation_history))
         state.sub_tasks = sub_tasks
 
         task_descriptions = [f"[{t.target_agent}] {t.description}" for t in sub_tasks]
@@ -100,7 +217,13 @@ class SupervisorOrchestrator:
                     metadata={"target_agent": "SQLAgent", "task_id": task.id}
                 )
 
-                sql_response = self.sql_agent.run(task.description)
+                with observe("Text-to-SQL", "tool", input={"task": task.description}) as sql_observation:
+                    sql_response = self.sql_agent.run(task.description)
+                    update_observation(sql_observation, output={
+                        "is_valid": sql_response.get("is_valid"),
+                        "row_count": len(sql_response.get("rows", [])),
+                        "executed_sql": sql_response.get("executed_sql"),
+                    })
                 state.sql_results.append(sql_response)
                 task.status = "completed"
                 task.result_summary = f"Executed SQL: {sql_response.get('executed_sql')}, returned {len(sql_response.get('rows', []))} rows"
@@ -127,11 +250,16 @@ class SupervisorOrchestrator:
                 )
 
                 k = top_k or settings.TOP_K
-                search_response = self.search_agent.search(
-                    task.description,
-                    top_k=k,
-                    doc_ids=document_ids
-                )
+                with observe("Vector retrieval", "retriever", input={"query": task.description, "top_k": k}) as retrieval_observation:
+                    search_response = self.search_agent.search(
+                        task.description,
+                        top_k=k,
+                        doc_ids=document_ids
+                    )
+                    update_observation(retrieval_observation, output={
+                        "chunk_count": len(search_response),
+                        "document_ids": document_ids,
+                    })
                 state.search_results.extend(search_response)
 
                 visual_count = sum(1 for c in search_response if c.get("chunk_type") == "visual")
@@ -155,7 +283,9 @@ class SupervisorOrchestrator:
             content="Aggregating retrieved document passages, visual exhibits, and SQL metrics. Composing research memorandum."
         )
 
-        draft_memo = self._synthesize_memo(state, gemini_api_key=gemini_api_key, openai_api_key=openai_api_key)
+        with observe("Memo synthesis", "generation", input={"query": state.query, "evidence_chunks": len(state.search_results), "sql_results": len(state.sql_results)}) as synthesis_observation:
+            draft_memo = self._synthesize_memo(state, gemini_api_key=gemini_api_key, openai_api_key=openai_api_key, observation=synthesis_observation)
+            update_observation(synthesis_observation, output={"memo_characters": len(draft_memo)})
 
         # -------------------------------------------------------------
         # STATE 4: GUARDRAIL & HALLUCINATION EVALUATION (LLM-as-Judge)
@@ -166,15 +296,30 @@ class SupervisorOrchestrator:
             content="Executing sentence-level factual grounding check against retrieved multimodal and SQL evidence."
         )
 
-        eval_report = self.evaluator.evaluate_memo(
-            memo_markdown=draft_memo,
-            sql_results=state.sql_results,
-            search_results=state.search_results
-        )
+        with observe("Grounding and hallucination guardrail", "guardrail", input={"memo_characters": len(draft_memo), "evidence_chunks": len(state.search_results)}) as guardrail_observation:
+            eval_report = self.evaluator.evaluate_memo(
+                memo_markdown=draft_memo,
+                sql_results=state.sql_results,
+                search_results=state.search_results
+            )
+            update_observation(guardrail_observation, output={
+                "overall_score": eval_report["overall_score"],
+                "status": eval_report["status"],
+                "grounded_claims": eval_report["grounded_claims"],
+                "ungrounded_claims": eval_report["ungrounded_claims"],
+            })
 
         state.synthesized_memo = eval_report["annotated_memo"]
         state.guardrail_report = eval_report
         state.citations = eval_report["citations"]
+
+        if settings.BLOCK_UNGROUNDED_MEMOS and eval_report["overall_score"] < settings.MIN_GROUNDING_SCORE:
+            state.synthesized_memo = (
+                "# Grounding review required\n\n"
+                f"This memo was withheld because its grounding score ({eval_report['overall_score']:.0%}) "
+                f"is below the configured minimum ({settings.MIN_GROUNDING_SCORE:.0%}). "
+                "Review the cited evidence, refine the question, or attach the relevant filing."
+            )
 
         state.add_trace(
             event_type="result",
@@ -198,6 +343,16 @@ class SupervisorOrchestrator:
         )
 
         return state
+
+    @staticmethod
+    def _query_with_memory(query: str, history: List[Dict[str, Any]]) -> str:
+        """Give routing/retrieval only compact prior context, bounded to three turns."""
+        if not history:
+            return query
+        prior_queries = [turn.get("user_query", "") for turn in history[-3:] if turn.get("user_query")]
+        if not prior_queries:
+            return query
+        return "Prior analyst questions: " + " | ".join(prior_queries) + "\nCurrent question: " + query
 
     def _decompose_query(self, query: str) -> List[SubTask]:
         """
@@ -242,7 +397,7 @@ class SupervisorOrchestrator:
 
         return sub_tasks
 
-    def _synthesize_memo(self, state: SupervisorState, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None) -> str:
+    def _synthesize_memo(self, state: SupervisorState, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, observation: Optional[Any] = None) -> str:
         """
         Synthesizes collected multimodal data into direct Markdown answer.
         Uses frontier LLM (Gemini / OpenAI) if keys available, else falls back to extractive synthesizer.
@@ -252,19 +407,19 @@ class SupervisorOrchestrator:
 
         if gkey:
             try:
-                return self._synthesize_llm_gemini(state, key=gkey)
+                return self._synthesize_llm_gemini(state, key=gkey, observation=observation)
             except Exception as e:
                 print(f"[Synthesizer] Gemini call failed: {e}, falling back.")
         
         if okey:
             try:
-                return self._synthesize_llm_openai(state, key=okey)
+                return self._synthesize_llm_openai(state, key=okey, observation=observation)
             except Exception as e:
                 print(f"[Synthesizer] OpenAI call failed: {e}, falling back.")
 
         return self._extractive_synthesizer(state)
 
-    def _synthesize_llm_gemini(self, state: SupervisorState, key: str) -> str:
+    def _synthesize_llm_gemini(self, state: SupervisorState, key: str, observation: Optional[Any] = None) -> str:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
         context_prompt = self._build_context_prompt(state)
         system_prompt = """You are an intelligent multimodal research assistant.
@@ -291,9 +446,15 @@ CRITICAL RULES:
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+            usage = data.get("usageMetadata", {})
+            update_observation(observation, metadata={"provider": "gemini", "model": "gemini-1.5-flash"}, usage_details={
+                "input_tokens": usage.get("promptTokenCount", 0),
+                "output_tokens": usage.get("candidatesTokenCount", 0),
+                "total_tokens": usage.get("totalTokenCount", 0),
+            })
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-    def _synthesize_llm_openai(self, state: SupervisorState, key: str) -> str:
+    def _synthesize_llm_openai(self, state: SupervisorState, key: str, observation: Optional[Any] = None) -> str:
         url = "https://api.openai.com/v1/chat/completions"
         context_prompt = self._build_context_prompt(state)
         payload = {
@@ -307,6 +468,12 @@ CRITICAL RULES:
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+            usage = data.get("usage", {})
+            update_observation(observation, metadata={"provider": "openai", "model": "gpt-4o-mini"}, usage_details={
+                "input_tokens": usage.get("prompt_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            })
             return data["choices"][0]["message"]["content"].strip()
 
     def _build_context_prompt(self, state: SupervisorState) -> str:

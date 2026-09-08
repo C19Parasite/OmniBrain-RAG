@@ -230,6 +230,9 @@ Output ONLY the raw SQL query.
             return "PRAGMA table_info(companies)"
 
 
+
+
+
         # Detect ticker
         ticker = "NVDA"
         if "aapl" in q or "apple" in q:
@@ -257,6 +260,7 @@ Output ONLY the raw SQL query.
 
         # Default fallback
         return f"SELECT ticker, quarter, revenue, net_income FROM quarterly_financials WHERE ticker = '{ticker}' ORDER BY quarter DESC LIMIT 4;"
+
 
     def _execute_read_only(self, sql: str) -> Dict[str, Any]:
         """

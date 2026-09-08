@@ -552,6 +552,8 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: query,
+          // This stable ID maps this browser chat to one isolated LangGraph thread.
+          thread_id: currentSession.id,
           top_k: topKVal,
           temperature: tempVal,
           gemini_api_key: geminiKey,

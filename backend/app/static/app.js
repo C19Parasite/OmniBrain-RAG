@@ -569,7 +569,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       // Animate pipeline
-      await animatePipeline(data.execution_trace || []);
+      await animatePipeline(data.execution_trace || [], data.self_correction);
       if (orchestrationFlowCard) orchestrationFlowCard.style.display = "none";
 
       // Create new turn object
@@ -581,6 +581,7 @@ document.addEventListener("DOMContentLoaded", () => {
         citations: data.citations || [],
         guardrail_report: data.guardrail_report,
         execution_trace: data.execution_trace || [],
+        self_correction: data.self_correction || null,
         execution_time_seconds: data.execution_time_seconds
       };
 
@@ -631,7 +632,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const assistantRow = document.createElement("div");
     assistantRow.className = "assistant-msg-row";
 
-    // Header with copy button
+    // Header with copy & export buttons
     const headerRow = document.createElement("div");
     headerRow.className = "assistant-header-row";
     headerRow.innerHTML = `
@@ -657,6 +658,22 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     assistantRow.appendChild(headerRow);
+
+    // Self-RAG Corrective Retrieval Indicator Banner
+    if (turn.self_correction && turn.self_correction.triggered) {
+      const selfRagBanner = document.createElement("div");
+      selfRagBanner.className = "self-rag-banner";
+      selfRagBanner.innerHTML = `
+        <span class="self-rag-icon">🔄</span>
+        <div class="self-rag-details">
+          <span class="self-rag-title">Self-RAG Corrective Retrieval Applied</span>
+          <span class="self-rag-desc">${escapeHtml(turn.self_correction.reason || 'Retrieval quality refined.')}</span>
+          <span class="self-rag-query">Optimized search query: <code>${escapeHtml(turn.self_correction.rewritten_query || '')}</code></span>
+        </div>
+      `;
+      assistantRow.appendChild(selfRagBanner);
+    }
+
     assistantRow.appendChild(contentDiv);
 
     // Guardrail Score & Citations Accordion (Minimal Footnote)
@@ -707,7 +724,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
-    // Quick Action Bar (Regenerate, Copy, Helpful Feedback)
+    // Quick Action Bar (Regenerate, Copy, Export, Helpful Feedback)
     const actionBar = document.createElement("div");
     actionBar.className = "assistant-action-bar";
     actionBar.innerHTML = `
@@ -838,7 +855,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Pipeline Helpers
   function resetPipelineNodes() {
-    ["Supervisor", "SQLAgent", "SearchAgent", "VisionAgent", "Synthesizer", "GuardrailEvaluator"].forEach(node => {
+    ["Supervisor", "SQLAgent", "SearchAgent", "SelfRAG", "VisionAgent", "Synthesizer", "GuardrailEvaluator"].forEach(node => {
       const el = document.getElementById(`pnode-${node}`);
       if (el) el.className = "pipe-node";
     });
@@ -854,7 +871,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (el) el.className = "pipe-node completed";
   }
 
-  async function animatePipeline(traces) {
+  async function animatePipeline(traces, selfCorrection) {
     const activeAgents = new Set();
     traces.forEach(t => activeAgents.add(t.agent));
 
@@ -872,6 +889,15 @@ document.addEventListener("DOMContentLoaded", () => {
       if (orchestrationStatusLabel) orchestrationStatusLabel.textContent = "Dense Semantic Vector Retrieving...";
       await sleep(150);
       setPipelineNodeCompleted("SearchAgent");
+    }
+
+    if (selfCorrection && selfCorrection.triggered) {
+      setPipelineNodeActive("SelfRAG");
+      if (orchestrationStatusLabel) orchestrationStatusLabel.textContent = "Self-RAG Correcting: Reformulating Query...";
+      await sleep(200);
+      setPipelineNodeCompleted("SelfRAG");
+    } else {
+      setPipelineNodeCompleted("SelfRAG");
     }
 
     setPipelineNodeCompleted("VisionAgent");

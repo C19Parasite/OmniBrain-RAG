@@ -31,6 +31,7 @@ class SupervisorState(BaseModel):
     synthesized_memo: Optional[str] = None
     guardrail_report: Dict[str, Any] = Field(default_factory=dict)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
+    self_correction: Optional[Dict[str, Any]] = None
     execution_time_seconds: float = 0.0
     # Compact, cited turn summaries only. Full documents and raw images remain
     # in the RAG stores; they must never be copied into conversational memory.

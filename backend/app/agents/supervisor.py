@@ -5,7 +5,7 @@ import sqlite3
 from uuid import uuid4
 import urllib.request
 import urllib.error
-from typing import List, Dict, Any, Optional, TypedDict
+from typing import List, Dict, Any, Optional, Tuple, TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.runtime import Runtime
@@ -275,6 +275,82 @@ class SupervisorOrchestrator:
                 )
 
         # -------------------------------------------------------------
+        # STATE 2.5: SELF-CORRECTION RETRIEVAL LOOP (Self-RAG / CRAG)
+        # -------------------------------------------------------------
+        has_search_task = any(t.target_agent == "SearchAgent" for t in sub_tasks)
+        if has_search_task:
+            needs_correction, reason = self._evaluate_retrieval_quality(query, state.search_results)
+            if needs_correction:
+                state.add_trace(
+                    event_type="thought",
+                    agent="Supervisor",
+                    content=f"Self-RAG Evaluator: {reason} Triggering autonomous query reformulation.",
+                    metadata={"reason": reason, "initial_chunks": len(state.search_results)}
+                )
+
+                rewritten_query = self._reformulate_query(
+                    query=query,
+                    reason=reason,
+                    gemini_api_key=gemini_api_key,
+                    openai_api_key=openai_api_key
+                )
+
+                state.add_trace(
+                    event_type="action",
+                    agent="Supervisor",
+                    content=f"Self-RAG: Reformulated search query: '{rewritten_query}'. Re-querying knowledge base.",
+                    metadata={"original_query": query, "rewritten_query": rewritten_query}
+                )
+
+                k = top_k or settings.TOP_K
+                retry_results = self.search_agent.search(
+                    rewritten_query,
+                    top_k=k,
+                    doc_ids=document_ids
+                )
+
+                # Merge and deduplicate chunks by id
+                existing_by_id = {c["id"]: c for c in state.search_results if "id" in c}
+                initial_count = len(state.search_results)
+                for c in retry_results:
+                    cid = c.get("id")
+                    if not cid or cid not in existing_by_id:
+                        if cid:
+                            existing_by_id[cid] = c
+                        else:
+                            state.search_results.append(c)
+                    else:
+                        if c.get("similarity_score", 0.0) > existing_by_id[cid].get("similarity_score", 0.0):
+                            existing_by_id[cid] = c
+
+                merged_chunks = list(existing_by_id.values())
+                merged_chunks.sort(key=lambda x: x.get("similarity_score", 0.0), reverse=True)
+                state.search_results = merged_chunks[:max(k, 6)]
+
+                new_max_sim = max([c.get("similarity_score", 0.0) for c in state.search_results], default=0.0)
+                state.self_correction = {
+                    "triggered": True,
+                    "original_query": query,
+                    "rewritten_query": rewritten_query,
+                    "initial_count": initial_count,
+                    "final_count": len(state.search_results),
+                    "reason": reason,
+                    "max_similarity": new_max_sim
+                }
+
+                state.add_trace(
+                    event_type="result",
+                    agent="Supervisor",
+                    content=f"Self-RAG: Re-retrieval completed with {len(retry_results)} additional chunk(s) (top similarity {new_max_sim:.2f}). Query successfully self-corrected.",
+                    metadata=state.self_correction
+                )
+            else:
+                state.self_correction = {
+                    "triggered": False,
+                    "reason": "Retrieval passed confidence and relevance checks."
+                }
+
+        # -------------------------------------------------------------
         # STATE 3: SYNTHESIS & INLINE CITATION GROUNDING
         # -------------------------------------------------------------
         state.add_trace(
@@ -396,6 +472,146 @@ class SupervisorOrchestrator:
         ))
 
         return sub_tasks
+
+    def _evaluate_retrieval_quality(self, query: str, chunks: List[Dict[str, Any]]) -> Tuple[bool, str]:
+        """
+        Self-RAG Evaluator: Evaluates retrieval quality against candidate chunks.
+        Triggers autonomous self-correction if:
+        1. Zero chunks retrieved from vector store.
+        2. Highest similarity score is below 0.40 confidence threshold.
+        3. Core query concepts/entities are absent from top results.
+        """
+        if not chunks:
+            return True, "Zero chunks retrieved from vector store."
+
+        scores = [c.get("similarity_score", 0.0) for c in chunks]
+        max_sim = max(scores) if scores else 0.0
+
+        if max_sim < 0.40:
+            return True, f"Low retrieval confidence: maximum similarity score ({max_sim:.2f}) falls below 0.40 threshold."
+
+        # Check for presence of key query entities & financial terms
+        q_lower = query.lower()
+        key_tokens = [w for w in re.findall(r'\b[a-zA-Z]{3,}\b', q_lower) if w not in {
+            "what", "were", "with", "from", "that", "this", "have", "about", "explain", "tell",
+            "show", "does", "report", "filing", "give", "some", "more", "then", "their", "there",
+            "please", "could", "would", "should"
+        }]
+
+        if key_tokens and len(chunks) > 0:
+            all_text = " ".join([c.get("text", "").lower() for c in chunks[:3]])
+            matched_tokens = [t for t in key_tokens if t in all_text]
+            match_ratio = len(matched_tokens) / len(key_tokens)
+            if match_ratio < 0.30 and max_sim < 0.55:
+                return True, f"Low concept overlap ({int(match_ratio*100)}% match for keywords: {', '.join(key_tokens[:4])})."
+
+        return False, "Retrieval passed confidence and relevance checks."
+
+    def _reformulate_query(
+        self,
+        query: str,
+        reason: str,
+        gemini_api_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None
+    ) -> str:
+        """
+        Reformulates search query using frontier LLM (if API keys provided)
+        or intelligent heuristic financial expansion.
+        """
+        gkey = gemini_api_key or settings.GEMINI_API_KEY
+        okey = openai_api_key or settings.OPENAI_API_KEY
+
+        if gkey:
+            try:
+                return self._reformulate_llm_gemini(query, key=gkey)
+            except Exception as e:
+                print(f"[Self-RAG] Gemini query reformulation failed: {e}")
+
+        if okey:
+            try:
+                return self._reformulate_llm_openai(query, key=okey)
+            except Exception as e:
+                print(f"[Self-RAG] OpenAI query reformulation failed: {e}")
+
+        return self._heuristic_query_expansion(query)
+
+    def _reformulate_llm_gemini(self, query: str, key: str) -> str:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        prompt = (
+            "You are a financial search query optimization specialist. "
+            "Rewrite the user's natural language question into a clean, concise, keyword-rich search query "
+            "optimized for corporate 10-K filings, earnings reports, and financial balance sheets. "
+            "Strip all conversational filler (e.g. 'can you tell me', 'what about', 'please explain'). "
+            "Expand financial abbreviations, tickers, and technical terms. "
+            "Return ONLY the rewritten query string, nothing else.\n\n"
+            f"User Question: {query}\n"
+            "Optimized Search Query:"
+        )
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 60}
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            rewritten = data["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"\'')
+            return rewritten if rewritten else query
+
+    def _reformulate_llm_openai(self, query: str, key: str) -> str:
+        url = "https://api.openai.com/v1/chat/completions"
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are a financial search query optimization specialist. Rewrite the user's query into a concise keyword-rich search query for financial documents. Return ONLY the rewritten query without quotes or extra text."},
+                {"role": "user", "content": f"User query: {query}"}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 60
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            rewritten = data["choices"][0]["message"]["content"].strip().strip('"\'')
+            return rewritten if rewritten else query
+
+    def _heuristic_query_expansion(self, query: str) -> str:
+        """
+        Rule-based financial query expansion:
+        1. Strips conversational prefixes.
+        2. Normalizes tickers and company names.
+        3. Expands core financial concepts.
+        """
+        clean = query.strip()
+        clean = re.sub(r'^(can\s+you\s+(please\s+)?(tell\s+me|explain|give|show|find|summarize|detail)\s+(about\s+)?|what\s+(is|are|was|were|about)\s+|could\s+you\s+|please\s+|tell\s+me\s+about\s+|how\s+(does|is|did)\s+)', '', clean, flags=re.IGNORECASE).strip()
+        clean = clean.rstrip("?.! ")
+
+        expansions = []
+        q_lower = clean.lower()
+
+        if any(w in q_lower for w in ["nvidia", "nvda"]):
+            expansions.append("NVIDIA NVDA Data Center Compute GPU Hopper Blackwell")
+        if any(w in q_lower for w in ["microsoft", "msft"]):
+            expansions.append("Microsoft MSFT Intelligent Cloud Azure commercial")
+        if any(w in q_lower for w in ["apple", "aapl"]):
+            expansions.append("Apple AAPL iPhone Services Gross Margin")
+        if any(w in q_lower for w in ["tesla", "tsla"]):
+            expansions.append("Tesla TSLA Automotive Deliveries Energy")
+
+        if any(w in q_lower for w in ["margin", "profitability", "gross margin"]):
+            expansions.append("gross margin percentage operating expenses profitability")
+        if any(w in q_lower for w in ["capex", "capital expenditure", "investment"]):
+            expansions.append("capital expenditures capex infrastructure investment")
+        if any(w in q_lower for w in ["revenue", "sales", "growth", "growing"]):
+            expansions.append("revenue growth YoY segment performance sales")
+        if any(w in q_lower for w in ["risk", "threat", "uncertainty", "competition"]):
+            expansions.append("risk factors supply chain regulatory export restrictions")
+        if any(w in q_lower for w in ["balance sheet", "debt", "cash", "liabilities"]):
+            expansions.append("balance sheet total assets liabilities cash equivalents debt")
+
+        if expansions:
+            return f"{clean} {' '.join(expansions[:2])}".strip()
+
+        return f"{clean} financial results performance segment revenue"
 
     def _synthesize_memo(self, state: SupervisorState, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, observation: Optional[Any] = None) -> str:
         """

@@ -6,7 +6,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse, Response
 
 from .config import settings
 from .models.schemas import (
@@ -15,7 +15,7 @@ from .models.schemas import (
     SearchTestRequest, SearchTestResponse, TextChunkResult,
     GuardrailReport, StructuredCitation,
     DocumentItem, TableSchemaInfo, SQLSandboxRequest, SQLSandboxResponse,
-    UploadPreviewResponse, CommitUploadRequest
+    UploadPreviewResponse, CommitUploadRequest, SelfCorrectionReport
 )
 from .db.database import FinancialDatabase
 from .db.seed_data import seed_database
@@ -175,6 +175,7 @@ async def run_query(req: QueryRequest):
         execution_trace=[e.model_dump() for e in state.execution_trace],
         search_results=state.search_results,
         sql_results=state.sql_results,
+        self_correction=state.self_correction,
         execution_time_seconds=state.execution_time_seconds
     )
 

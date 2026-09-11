@@ -107,6 +107,15 @@ class QueryRequest(BaseModel):
     openai_api_key: Optional[str] = None
     document_ids: Optional[List[str]] = None  # Specific document context for this chat
 
+class SelfCorrectionReport(BaseModel):
+    triggered: bool = False
+    original_query: Optional[str] = None
+    rewritten_query: Optional[str] = None
+    initial_count: int = 0
+    final_count: int = 0
+    reason: Optional[str] = None
+    max_similarity: float = 0.0
+
 class QueryResponse(BaseModel):
     query: str
     memo_markdown: str
@@ -116,6 +125,7 @@ class QueryResponse(BaseModel):
     execution_trace: List[Dict[str, Any]] = Field(default_factory=list)
     search_results: List[Dict[str, Any]] = Field(default_factory=list)
     sql_results: List[Dict[str, Any]] = Field(default_factory=list)
+    self_correction: Optional[Dict[str, Any]] = None
     execution_time_seconds: float = 0.0
 
 # --- Individual Agent Test Models ---

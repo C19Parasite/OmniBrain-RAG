@@ -15,8 +15,9 @@ from .models.schemas import (
     SearchTestRequest, SearchTestResponse, TextChunkResult,
     GuardrailReport, StructuredCitation,
     DocumentItem, TableSchemaInfo, SQLSandboxRequest, SQLSandboxResponse,
-    UploadPreviewResponse, CommitUploadRequest, SelfCorrectionReport
+    UploadPreviewResponse, CommitUploadRequest, SelfCorrectionReport, ExportMemoRequest
 )
+from .export import generate_memo_markdown, generate_memo_html
 from .db.database import FinancialDatabase
 from .db.seed_data import seed_database
 from .rag.embeddings import TextEmbeddings
@@ -178,6 +179,25 @@ async def run_query(req: QueryRequest):
         self_correction=state.self_correction,
         execution_time_seconds=state.execution_time_seconds
     )
+
+# 2.1 Institutional Research Memo Export Endpoint
+@app.post("/api/export/memo")
+async def export_memo(req: ExportMemoRequest):
+    """
+    Exports synthesized institutional research memorandum.
+    Supports format='markdown' (returns .md attachment) or format='pdf_html' / 'html' (returns print-ready HTML).
+    """
+    if req.format == "markdown":
+        md_content = generate_memo_markdown(req)
+        filename = f"OmniBrain_Memo_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        return Response(
+            content=md_content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    else:
+        html_content = generate_memo_html(req)
+        return HTMLResponse(content=html_content)
 
 # 3. Multimodal Document Center Endpoints
 @app.get("/api/documents", response_model=List[DocumentItem])

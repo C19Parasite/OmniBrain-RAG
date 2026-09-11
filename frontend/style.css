@@ -2146,6 +2146,28 @@ body {
   color: #FFFFFF;
 }
 
+.btn-export-md, .btn-export-pdf {
+  background: var(--bg-card);
+  border: 1px solid var(--border-line);
+  border-radius: 4px;
+  font-family: var(--font-grotesk);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-export-md:hover, .btn-export-pdf:hover {
+  background: var(--text-primary);
+  color: var(--bg-oat);
+  border-color: var(--text-primary);
+}
+
 .self-rag-banner {
   background: rgba(217, 119, 6, 0.07);
   border: 1px solid rgba(217, 119, 6, 0.28);

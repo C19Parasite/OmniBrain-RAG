@@ -128,6 +128,15 @@ class QueryResponse(BaseModel):
     self_correction: Optional[Dict[str, Any]] = None
     execution_time_seconds: float = 0.0
 
+# --- Export Memo Models ---
+
+class ExportMemoRequest(BaseModel):
+    query: str
+    memo_markdown: str
+    format: str = "markdown"  # 'markdown' or 'pdf_html'
+    guardrail_report: Optional[Dict[str, Any]] = None
+    citations: Optional[List[Dict[str, Any]]] = None
+
 # --- Individual Agent Test Models ---
 
 class SQLTestRequest(BaseModel):

@@ -644,6 +644,8 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
       <div class="assistant-actions">
         <button class="btn-copy-memo" title="Copy response to clipboard">📋 Copy</button>
+        <button class="btn-export-md" title="Export as Markdown memorandum">📄 Export MD</button>
+        <button class="btn-export-pdf" title="Export as Institutional Print/PDF">📥 Export PDF</button>
       </div>
     `;
 
@@ -657,6 +659,16 @@ document.addEventListener("DOMContentLoaded", () => {
       navigator.clipboard.writeText(contentDiv.innerText).then(() => {
         showToast("Response copied to clipboard!", "success");
       });
+    });
+
+    // Export MD event
+    headerRow.querySelector(".btn-export-md").addEventListener("click", () => {
+      exportMemoMarkdown(turn);
+    });
+
+    // Export PDF event
+    headerRow.querySelector(".btn-export-pdf").addEventListener("click", () => {
+      exportMemoPdf(turn);
     });
 
     assistantRow.appendChild(headerRow);
@@ -731,6 +743,8 @@ document.addEventListener("DOMContentLoaded", () => {
     actionBar.className = "assistant-action-bar";
     actionBar.innerHTML = `
       <button class="action-btn-sm btn-copy-turn" title="Copy answer text">📋 Copy</button>
+      <button class="action-btn-sm btn-export-md-turn" title="Export Markdown">📄 Export MD</button>
+      <button class="action-btn-sm btn-export-pdf-turn" title="Print / Export PDF">📥 Export PDF</button>
       <button class="action-btn-sm btn-regen-turn" title="Regenerate answer">🔄 Regenerate</button>
       <button class="action-btn-sm btn-like-turn" title="Mark response as helpful">👍 Helpful</button>
       <button class="action-btn-sm btn-dislike-turn" title="Report inaccurate claim">👎 Poor</button>
@@ -740,6 +754,14 @@ document.addEventListener("DOMContentLoaded", () => {
       navigator.clipboard.writeText(contentDiv.innerText).then(() => {
         showToast("Answer copied to clipboard!", "success");
       });
+    });
+
+    actionBar.querySelector(".btn-export-md-turn").addEventListener("click", () => {
+      exportMemoMarkdown(turn);
+    });
+
+    actionBar.querySelector(".btn-export-pdf-turn").addEventListener("click", () => {
+      exportMemoPdf(turn);
     });
 
     actionBar.querySelector(".btn-regen-turn").addEventListener("click", () => {
@@ -919,6 +941,68 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // -------------------------------------------------------------
+  // Institutional Research Memo Export Handlers
+  // -------------------------------------------------------------
+  async function exportMemoMarkdown(turn) {
+    try {
+      showToast("Generating Markdown memorandum...", "info");
+      const res = await fetch("/api/export/memo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: turn.query,
+          memo_markdown: turn.answer_markdown,
+          format: "markdown",
+          guardrail_report: turn.guardrail_report,
+          citations: turn.citations
+        })
+      });
+      if (!res.ok) throw new Error(`Export returned status ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `OmniBrain_Research_Memo_${Date.now()}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast("Markdown memorandum downloaded ✓", "success");
+    } catch (err) {
+      showToast(`Export failed: ${err.message}`, "error");
+    }
+  }
+
+  async function exportMemoPdf(turn) {
+    try {
+      showToast("Opening Print-Ready PDF export window...", "info");
+      const res = await fetch("/api/export/memo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: turn.query,
+          memo_markdown: turn.answer_markdown,
+          format: "pdf_html",
+          guardrail_report: turn.guardrail_report,
+          citations: turn.citations
+        })
+      });
+      if (!res.ok) throw new Error(`Export returned status ${res.status}`);
+      const htmlText = await res.text();
+      const printWindow = window.open("", "_blank");
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(htmlText);
+        printWindow.document.close();
+      } else {
+        showToast("Pop-up blocked: please allow pop-ups for print export", "error");
+      }
+    } catch (err) {
+      showToast(`PDF Export failed: ${err.message}`, "error");
+    }
   }
 
   // -------------------------------------------------------------

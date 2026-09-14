@@ -2,11 +2,13 @@ import chromadb
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from ..config import settings
+from .hybrid import BM25Index, reciprocal_rank_fusion
 
 class ChromaVectorStore:
     """
     Chroma-backed persistent vector store for OmniBrain.
     Stores and retrieves both 'text' and 'visual' chunks with rich source metadata.
+    Integrates sparse BM25 indexing and Reciprocal Rank Fusion (RRF) for hybrid retrieval.
     """
 
     def __init__(self, persist_dir: Optional[Path] = None, collection_name: str = "multimodal_chunks"):
@@ -25,6 +27,35 @@ class ChromaVectorStore:
 
         # In-memory store for chunk image payloads
         self._image_store: Dict[str, str] = {}
+        
+        # Sparse BM25 index for keyword & exact numeric matching
+        self.bm25_index = BM25Index()
+        self._sync_bm25_from_collection()
+
+    def _sync_bm25_from_collection(self):
+        """Populates BM25 index from existing persistent ChromaDB collection."""
+        try:
+            count = self.collection.count()
+            if count > 0:
+                data = self.collection.get(include=["documents", "metadatas"])
+                if data and data.get("ids"):
+                    chunks = []
+                    for idx, cid in enumerate(data["ids"]):
+                        doc = data["documents"][idx] if data.get("documents") else ""
+                        meta = data["metadatas"][idx] if data.get("metadatas") else {}
+                        chunks.append({
+                            "id": cid,
+                            "text": doc,
+                            "source_document": meta.get("source_document", "unknown"),
+                            "page_number": int(meta.get("page_number", 1)),
+                            "chunk_type": meta.get("chunk_type", "text"),
+                            "section_title": meta.get("section_title", "General"),
+                            "doc_id": meta.get("doc_id", "doc_0"),
+                            "image_base64": self._image_store.get(cid)
+                        })
+                    self.bm25_index.add_chunks(chunks)
+        except Exception as e:
+            print(f"[VectorStore] Notice: BM25 sync on init: {e}")
 
     def add_chunks(
         self,
@@ -62,6 +93,8 @@ class ChromaVectorStore:
             documents=documents,
             metadatas=metadatas
         )
+        # Update BM25 sparse index
+        self.bm25_index.add_chunks(chunks)
         return len(chunks)
 
     def search_chunks(
@@ -133,18 +166,95 @@ class ChromaVectorStore:
                     "section_title": meta.get("section_title", "General"),
                     "similarity_score": similarity,
                     "image_base64": self._image_store.get(chunk_id),
-                    "doc_id": meta.get("doc_id", "doc_0")
+                    "doc_id": meta.get("doc_id", "doc_0"),
+                    "retrieval_method": "dense"
                 })
 
         return formatted_results
 
+    def search_hybrid(
+        self,
+        query: str = "",
+        query_embedding: Optional[List[float]] = None,
+        top_k: int = 5,
+        chunk_type_filter: Optional[str] = None,
+        doc_ids: Optional[List[str]] = None,
+        mode: str = "hybrid"
+    ) -> List[Dict[str, Any]]:
+        """
+        Hybrid retrieval combining Dense Semantic Cosine Search and Sparse BM25 Search
+        via Reciprocal Rank Fusion (RRF).
+        Supports modes: 'hybrid', 'dense', 'bm25' (or 'sparse').
+        """
+        if mode == "dense":
+            if not query_embedding:
+                return []
+            return self.search_chunks(
+                query_embedding=query_embedding,
+                top_k=top_k,
+                chunk_type_filter=chunk_type_filter,
+                doc_ids=doc_ids
+            )
+
+        if mode in ("sparse", "bm25"):
+            if not query:
+                return []
+            return self.bm25_index.search(
+                query=query,
+                top_k=top_k,
+                doc_ids=doc_ids,
+                chunk_type_filter=chunk_type_filter
+            )
+
+        # Mode: Hybrid (RRF)
+        candidate_k = max(top_k * 2, 8)
+        dense_results: List[Dict[str, Any]] = []
+        if query_embedding and any(v != 0.0 for v in query_embedding):
+            dense_results = self.search_chunks(
+                query_embedding=query_embedding,
+                top_k=candidate_k,
+                chunk_type_filter=chunk_type_filter,
+                doc_ids=doc_ids
+            )
+
+        sparse_results: List[Dict[str, Any]] = []
+        if query and query.strip():
+            sparse_results = self.bm25_index.search(
+                query=query,
+                top_k=candidate_k,
+                doc_ids=doc_ids,
+                chunk_type_filter=chunk_type_filter
+            )
+
+        if not dense_results and not sparse_results:
+            return []
+        if not dense_results:
+            return sparse_results[:top_k]
+        if not sparse_results:
+            return dense_results[:top_k]
+
+        return reciprocal_rank_fusion(
+            dense_results=dense_results,
+            sparse_results=sparse_results,
+            top_k=top_k
+        )
+
     def search_text(
         self,
-        query_embedding: List[float],
+        query_embedding: Optional[List[float]] = None,
         top_k: int = 5,
-        doc_ids: Optional[List[str]] = None
+        doc_ids: Optional[List[str]] = None,
+        query: str = "",
+        mode: str = "hybrid"
     ) -> List[Dict[str, Any]]:
-        return self.search_chunks(query_embedding, top_k=top_k, doc_ids=doc_ids)
+        """High-level text search supporting hybrid, dense, or sparse modes."""
+        return self.search_hybrid(
+            query=query,
+            query_embedding=query_embedding,
+            top_k=top_k,
+            doc_ids=doc_ids,
+            mode=mode
+        )
 
     def add_text_chunks(self, chunks: List[Dict[str, Any]], embeddings: List[List[float]]) -> int:
         return self.add_chunks(chunks, embeddings)
@@ -153,7 +263,7 @@ class ChromaVectorStore:
         return self.collection.count()
 
     def delete_by_doc_id(self, doc_id: str) -> int:
-        """Deletes all chunks matching doc_id from the vector store."""
+        """Deletes all chunks matching doc_id from the vector store and BM25 index."""
         try:
             results = self.collection.get(where={"doc_id": doc_id})
             if results and results.get("ids"):
@@ -161,6 +271,7 @@ class ChromaVectorStore:
                 self.collection.delete(ids=ids_to_del)
                 for cid in ids_to_del:
                     self._image_store.pop(cid, None)
+                self.bm25_index.delete_by_doc_id(doc_id)
                 return len(ids_to_del)
         except Exception:
             pass
@@ -168,6 +279,7 @@ class ChromaVectorStore:
 
     def clear(self):
         self._image_store.clear()
+        self.bm25_index.clear()
         self.client.delete_collection(name=self.collection_name)
         self.collection = self.client.get_or_create_collection(
             name=self.collection_name,

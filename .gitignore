@@ -62,6 +62,8 @@ data/uploads/
 .pytest_cache/
 .coverage
 htmlcov/
+tests/data/
+tests/test_tmp/
 
 # Logs
 *.log

@@ -22,25 +22,29 @@ class SearchAgent:
         self,
         query: str,
         top_k: Optional[int] = None,
-        doc_ids: Optional[List[str]] = None
+        doc_ids: Optional[List[str]] = None,
+        mode: str = "hybrid"
     ) -> List[Dict[str, Any]]:
         """
-        Executes semantic vector search for a natural language query.
-        Returns top-k matching text chunks with source document, page, and similarity scores.
+        Executes hybrid retrieval (Dense embeddings + Sparse BM25 via Reciprocal Rank Fusion).
+        Returns top-k matching multimodal chunks with source document, page, and similarity scores.
         """
         if not query or not query.strip():
             return []
 
         k = top_k if (top_k is not None and top_k > 0) else settings.TOP_K
 
-        # 1. Embed query
-        query_vector = self.embeddings.embed_text(query)
+        # 1. Embed query (used for dense or hybrid mode)
+        query_vector = self.embeddings.embed_text(query) if mode in ("dense", "hybrid") else None
 
-        # 2. Query ChromaDB vector store with optional doc_ids filter
+        # 2. Query ChromaDB vector store + BM25 sparse index
         results = self.vector_store.search_text(
+            query=query,
             query_embedding=query_vector,
             top_k=k,
-            doc_ids=doc_ids
+            doc_ids=doc_ids,
+            mode=mode
         )
 
         return results
+

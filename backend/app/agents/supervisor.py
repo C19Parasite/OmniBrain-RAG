@@ -29,6 +29,7 @@ class _ConversationGraphState(TypedDict, total=False):
     top_k: Optional[int]
     temperature: Optional[float]
     document_ids: Optional[List[str]]
+    retrieval_mode: Optional[str]
     conversation_history: List[Dict[str, Any]]
     result: Dict[str, Any]
 
@@ -86,15 +87,16 @@ class SupervisorOrchestrator:
         builder.add_edge("research", END)
         return builder.compile(checkpointer=self.checkpointer)
 
-    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, thread_id: Optional[str] = None) -> SupervisorState:
+    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, thread_id: Optional[str] = None, retrieval_mode: Optional[str] = "hybrid") -> SupervisorState:
         """Run a query in a checkpointed LangGraph conversation thread."""
         # Legacy clients that do not send a thread ID must not accidentally
         # share memory with another request.
         thread_id = thread_id or str(uuid4())
+        mode = retrieval_mode or "hybrid"
         with observe(
             "OmniBrain Supervisor",
             "agent",
-            input={"query": query, "document_ids": document_ids},
+            input={"query": query, "document_ids": document_ids, "retrieval_mode": mode},
             metadata={"thread_id": thread_id, "environment": settings.LANGFUSE_ENVIRONMENT},
         ) as root_observation:
             graph_state = self.graph.invoke(
@@ -103,6 +105,7 @@ class SupervisorOrchestrator:
                     "top_k": top_k,
                     "temperature": temperature,
                     "document_ids": document_ids,
+                    "retrieval_mode": mode,
                 },
                 {"configurable": {"thread_id": thread_id}},
                 context={"gemini_api_key": gemini_api_key, "openai_api_key": openai_api_key},
@@ -117,6 +120,7 @@ class SupervisorOrchestrator:
                     "grounding_score": result.guardrail_report.get("overall_score"),
                     "grounding_status": result.guardrail_report.get("status"),
                     "citation_count": len(result.citations),
+                    "retrieval_mode": result.retrieval_mode,
                 },
             )
         flush_langfuse()
@@ -133,9 +137,11 @@ class SupervisorOrchestrator:
             gemini_api_key=(runtime.context or {}).get("gemini_api_key"),
             openai_api_key=(runtime.context or {}).get("openai_api_key"),
             conversation_history=history,
+            retrieval_mode=graph_state.get("retrieval_mode", "hybrid") or "hybrid",
         )
         turn = {
             "user_query": state.query,
+            "resolved_query": state.resolved_query,
             "assistant_memo": (state.synthesized_memo or "")[:4000],
             "document_ids": graph_state.get("document_ids"),
             "citations": [
@@ -150,12 +156,16 @@ class SupervisorOrchestrator:
             "conversation_history": updated_history,
         }
 
-    def _process_query_once(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None) -> SupervisorState:
+    def _process_query_once(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None, retrieval_mode: str = "hybrid") -> SupervisorState:
         """
         Executes end-to-end multi-agent LangGraph workflow.
         """
         start_time = time.time()
-        state = SupervisorState(query=query, conversation_history=conversation_history or [])
+        state = SupervisorState(
+            query=query,
+            conversation_history=conversation_history or [],
+            retrieval_mode=retrieval_mode
+        )
 
         # -------------------------------------------------------------
         # CHECK: NO DOCUMENT ATTACHED
@@ -186,15 +196,36 @@ class SupervisorOrchestrator:
             return state
 
         # -------------------------------------------------------------
+        # STATE 0: MULTI-TURN CONTEXTUAL CO-REFERENCE RESOLUTION
+        # -------------------------------------------------------------
+        resolved_query, was_resolved = self._resolve_conversational_query(
+            query=query,
+            history=state.conversation_history,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key
+        )
+        if was_resolved:
+            state.resolved_query = resolved_query
+            state.add_trace(
+                event_type="thought",
+                agent="Supervisor",
+                content=f"Multi-Turn Memory: Resolved follow-up query to: '{resolved_query}' using conversational context.",
+                metadata={"original_query": query, "resolved_query": resolved_query, "history_turns": len(state.conversation_history)}
+            )
+            effective_query = resolved_query
+        else:
+            effective_query = query
+
+        # -------------------------------------------------------------
         # STATE 1: SUPERVISOR QUERY DECOMPOSITION & PLANNING
         # -------------------------------------------------------------
         state.add_trace(
             event_type="thought",
             agent="Supervisor",
-            content=f"Received query: '{query}'. Evaluating intent, decomposing sub-tasks, and determining agent routing."
+            content=f"Received query: '{effective_query}'. Evaluating intent, decomposing sub-tasks, and determining agent routing."
         )
 
-        sub_tasks = self._decompose_query(self._query_with_memory(query, state.conversation_history))
+        sub_tasks = self._decompose_query(effective_query)
         state.sub_tasks = sub_tasks
 
         task_descriptions = [f"[{t.target_agent}] {t.description}" for t in sub_tasks]
@@ -246,15 +277,16 @@ class SupervisorOrchestrator:
                 state.add_trace(
                     event_type="tool",
                     agent="SearchAgent",
-                    content=f"Querying ChromaDB vector store for multimodal chunks matching: '{task.description}'"
+                    content=f"Querying knowledge base ({retrieval_mode.upper()} Search: ChromaDB + BM25 RRF) for: '{task.description}'"
                 )
 
                 k = top_k or settings.TOP_K
-                with observe("Vector retrieval", "retriever", input={"query": task.description, "top_k": k}) as retrieval_observation:
+                with observe("Vector retrieval", "retriever", input={"query": task.description, "top_k": k, "retrieval_mode": retrieval_mode}) as retrieval_observation:
                     search_response = self.search_agent.search(
                         task.description,
                         top_k=k,
-                        doc_ids=document_ids
+                        doc_ids=document_ids,
+                        mode=retrieval_mode
                     )
                     update_observation(retrieval_observation, output={
                         "chunk_count": len(search_response),
@@ -279,7 +311,7 @@ class SupervisorOrchestrator:
         # -------------------------------------------------------------
         has_search_task = any(t.target_agent == "SearchAgent" for t in sub_tasks)
         if has_search_task:
-            needs_correction, reason = self._evaluate_retrieval_quality(query, state.search_results)
+            needs_correction, reason = self._evaluate_retrieval_quality(effective_query, state.search_results)
             if needs_correction:
                 state.add_trace(
                     event_type="thought",
@@ -289,7 +321,7 @@ class SupervisorOrchestrator:
                 )
 
                 rewritten_query = self._reformulate_query(
-                    query=query,
+                    query=effective_query,
                     reason=reason,
                     gemini_api_key=gemini_api_key,
                     openai_api_key=openai_api_key
@@ -299,14 +331,15 @@ class SupervisorOrchestrator:
                     event_type="action",
                     agent="Supervisor",
                     content=f"Self-RAG: Reformulated search query: '{rewritten_query}'. Re-querying knowledge base.",
-                    metadata={"original_query": query, "rewritten_query": rewritten_query}
+                    metadata={"original_query": effective_query, "rewritten_query": rewritten_query}
                 )
 
                 k = top_k or settings.TOP_K
                 retry_results = self.search_agent.search(
                     rewritten_query,
                     top_k=k,
-                    doc_ids=document_ids
+                    doc_ids=document_ids,
+                    mode=retrieval_mode
                 )
 
                 # Merge and deduplicate chunks by id
@@ -419,6 +452,168 @@ class SupervisorOrchestrator:
         )
 
         return state
+
+    def _resolve_conversational_query(
+        self,
+        query: str,
+        history: List[Dict[str, Any]],
+        gemini_api_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None
+    ) -> Tuple[str, bool]:
+        """
+        Resolves follow-up queries using conversational memory.
+        Detects pronouns, ellipsis, or missing subjects from prior turns.
+        Returns (resolved_query, was_resolved).
+        """
+        if not history or not query.strip():
+            return query, False
+
+        q_clean = query.strip()
+        q_lower = q_clean.lower()
+
+        # Follow-up indicators
+        has_pronouns = bool(re.search(r'\b(they|their|theirs|them|it|its|this|that|these|those)\b', q_lower))
+        has_ellipsis = bool(re.search(r'^(what about|how about|compare with|compare to|and for|why did it|did it|what of)\b', q_lower))
+
+        known_companies = ["nvidia", "nvda", "microsoft", "msft", "apple", "aapl", "tesla", "tsla", "amazon", "amzn", "google", "googl"]
+        query_has_company = any(c in q_lower for c in known_companies)
+
+        prior_companies = []
+        for turn in reversed(history[-4:]):
+            pq = turn.get("user_query", "")
+            if pq:
+                for comp in ["NVIDIA", "Microsoft", "Apple", "Tesla", "Amazon", "Alphabet"]:
+                    if comp.lower() in pq.lower() and comp not in prior_companies:
+                        prior_companies.append(comp)
+                for tick in ["NVDA", "MSFT", "AAPL", "TSLA", "AMZN", "GOOGL"]:
+                    if tick.lower() in pq.lower() and tick not in prior_companies:
+                        prior_companies.append(tick)
+
+        asks_metric = bool(re.search(r'\b(revenue|sales|gross margin|margin|net income|earnings|eps|guidance|capex|growth|data center|cloud)\b', q_lower))
+        is_definitional_or_general = bool(re.search(r'\b(difference between|what is\b|what are\b|define\b|explain the concept|how does a\b|how do\b)', q_lower))
+
+        is_follow_up = (
+            has_pronouns or 
+            has_ellipsis or 
+            (not query_has_company and len(prior_companies) > 0 and asks_metric and not is_definitional_or_general)
+        )
+        if not is_follow_up:
+            return query, False
+
+        # Attempt frontier LLM resolution
+        gkey = gemini_api_key or settings.GEMINI_API_KEY
+        okey = openai_api_key or settings.OPENAI_API_KEY
+
+        if gkey:
+            try:
+                resolved = self._resolve_llm_gemini(query, history[-3:], gkey)
+                if resolved and resolved.lower() != q_lower:
+                    return resolved, True
+            except Exception as e:
+                print(f"[Memory] Gemini co-reference resolution failed: {e}")
+
+        if okey:
+            try:
+                resolved = self._resolve_llm_openai(query, history[-3:], okey)
+                if resolved and resolved.lower() != q_lower:
+                    return resolved, True
+            except Exception as e:
+                print(f"[Memory] OpenAI co-reference resolution failed: {e}")
+
+        resolved = self._heuristic_coreference_resolution(query, history[-3:], prior_companies)
+        return (resolved, True) if resolved != query else (query, False)
+
+    def _resolve_llm_gemini(self, query: str, recent_turns: List[Dict[str, Any]], key: str) -> str:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        turns_summary = "\n".join([f"Analyst: {t.get('user_query', '')}" for t in recent_turns])
+        prompt = f"""You are a financial query resolution agent.
+Given the previous dialogue turns between an analyst and financial assistant:
+{turns_summary}
+
+Rewrite the following follow-up question into a single, complete, standalone financial search query:
+Follow-up: "{query}"
+
+Rules:
+- Resolve all pronouns ('their', 'its', 'they', 'it') to the target company or metric.
+- Resolve ellipsis ('what about...', 'compare to...') by incorporating the relevant metric from earlier turns.
+- Return ONLY the rewritten query text without quotes or explanation."""
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 60}
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            rewritten = data["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"\'')
+            return rewritten if rewritten else query
+
+    def _resolve_llm_openai(self, query: str, recent_turns: List[Dict[str, Any]], key: str) -> str:
+        url = "https://api.openai.com/v1/chat/completions"
+        turns_summary = "\n".join([f"Analyst: {t.get('user_query', '')}" for t in recent_turns])
+        prompt = f"""Given the previous dialogue turns:
+{turns_summary}
+
+Rewrite the following follow-up question into a single, complete, standalone financial search query:
+Follow-up: "{query}"
+
+Rules:
+- Resolve all pronouns ('their', 'its', 'they', 'it') to the target company or metric.
+- Return ONLY the rewritten query text without quotes or explanation."""
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are a financial query co-reference resolution agent. Return ONLY the rewritten standalone query."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.0,
+            "max_tokens": 60
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            rewritten = data["choices"][0]["message"]["content"].strip().strip('"\'')
+            return rewritten if rewritten else query
+
+    def _heuristic_coreference_resolution(
+        self,
+        query: str,
+        history: List[Dict[str, Any]],
+        prior_companies: List[str]
+    ) -> str:
+        clean_q = query.strip()
+        last_turn = history[-1] if history else {}
+        last_query = last_turn.get("user_query", "")
+
+        subject_company = prior_companies[0] if prior_companies else ""
+
+        # 1. Ellipsis "What about [Entity]?"
+        ellipsis_match = re.match(r'^(what about|how about|and what about)\s+([a-zA-Z0-9\s]+)\??$', clean_q, re.IGNORECASE)
+        if ellipsis_match:
+            target_entity = ellipsis_match.group(2).strip()
+            metrics = []
+            for term in ["revenue", "gross margin", "margin", "net income", "growth", "data center", "cloud", "capex", "capital expenditure"]:
+                if term in last_query.lower():
+                    metrics.append(term)
+            metric_str = " and ".join(metrics) if metrics else "financial performance and revenue"
+            return f"What was {target_entity} {metric_str}?"
+
+        # 2. Pronoun replacement (their/its -> subject_company)
+        resolved = clean_q
+        if subject_company:
+            resolved = re.sub(r'\b(their|theirs|its)\b', f"{subject_company}'s", resolved, flags=re.IGNORECASE)
+            resolved = re.sub(r'\b(them|it)\b', subject_company, resolved, flags=re.IGNORECASE)
+
+            if subject_company.lower() not in resolved.lower():
+                resolved = f"{subject_company} {resolved}"
+
+        # 3. Fiscal period continuity if present in last query
+        fiscal_match = re.search(r'\b(Q[1-4]\s*(?:FY)?\d{2,4}|FY\d{2,4}|202[0-9])\b', last_query, re.IGNORECASE)
+        if fiscal_match:
+            period = fiscal_match.group(1)
+            if period.lower() not in resolved.lower():
+                resolved = f"{resolved.rstrip('?. ')} in {period}"
+
+        return resolved.strip()
 
     @staticmethod
     def _query_with_memory(query: str, history: List[Dict[str, Any]]) -> str:
@@ -694,6 +889,15 @@ CRITICAL RULES:
 
     def _build_context_prompt(self, state: SupervisorState) -> str:
         ctx = ""
+        if state.conversation_history:
+            ctx += "=== PREVIOUS DIALOGUE CONTEXT (MULTI-TURN MEMORY) ===\n"
+            for idx, turn in enumerate(state.conversation_history[-3:], start=1):
+                user_q = turn.get("user_query", "")
+                memo_prev = turn.get("assistant_memo", "")[:250].replace("\n", " ").strip()
+                if user_q:
+                    ctx += f"Prior Turn {idx}: Analyst: '{user_q}' -> Assistant: {memo_prev}...\n"
+            ctx += "\n"
+
         if state.sql_results:
             ctx += "=== STRUCTURED FINANCIAL DATABASE RESULTS (SQL AGENT) ===\n"
             for res in state.sql_results:

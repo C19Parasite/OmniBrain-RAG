@@ -139,7 +139,8 @@ async def run_query(req: QueryRequest):
         temperature=req.temperature,
         document_ids=req.document_ids,
         gemini_api_key=req.gemini_api_key,
-        openai_api_key=req.openai_api_key
+        openai_api_key=req.openai_api_key,
+        retrieval_mode=req.retrieval_mode or "hybrid"
     )
     
     # Format structured citations
@@ -177,6 +178,8 @@ async def run_query(req: QueryRequest):
         search_results=state.search_results,
         sql_results=state.sql_results,
         self_correction=state.self_correction,
+        resolved_query=state.resolved_query,
+        retrieval_mode=state.retrieval_mode,
         execution_time_seconds=state.execution_time_seconds
     )
 

@@ -558,7 +558,8 @@ document.addEventListener("DOMContentLoaded", () => {
           temperature: tempVal,
           gemini_api_key: geminiKey,
           openai_api_key: openaiKey,
-          document_ids: activeChatDocIds
+          document_ids: activeChatDocIds,
+          retrieval_mode: "hybrid"
         })
       });
 
@@ -584,6 +585,8 @@ document.addEventListener("DOMContentLoaded", () => {
         guardrail_report: data.guardrail_report,
         execution_trace: data.execution_trace || [],
         self_correction: data.self_correction || null,
+        resolved_query: data.resolved_query || null,
+        retrieval_mode: data.retrieval_mode || "hybrid",
         execution_time_seconds: data.execution_time_seconds
       };
 
@@ -673,6 +676,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     assistantRow.appendChild(headerRow);
 
+    // Multi-Turn Context Resolution Banner
+    if (turn.resolved_query && turn.resolved_query.trim().toLowerCase() !== (turn.query || '').trim().toLowerCase()) {
+      const memoryBanner = document.createElement("div");
+      memoryBanner.className = "context-resolved-banner";
+      memoryBanner.innerHTML = `
+        <span class="context-resolved-icon">💬</span>
+        <div class="context-resolved-details">
+          <span class="context-resolved-title">Multi-Turn Context Resolved</span>
+          <span class="context-resolved-desc">Contextualized standalone query: <code>${escapeHtml(turn.resolved_query)}</code></span>
+        </div>
+      `;
+      assistantRow.appendChild(memoryBanner);
+    }
+
     // Self-RAG Corrective Retrieval Indicator Banner
     if (turn.self_correction && turn.self_correction.triggered) {
       const selfRagBanner = document.createElement("div");
@@ -695,6 +712,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const citations = turn.citations || [];
     const scorePct = Math.round((gr?.overall_score || 1.0) * 100);
     const grStatus = gr?.status || "PASSED";
+    const retMode = (turn.retrieval_mode || "hybrid").toUpperCase();
 
     const auditBar = document.createElement("div");
     auditBar.className = "turn-audit-bar";
@@ -702,6 +720,9 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="turn-audit-summary">
         <span class="grounding-pill ${grStatus.toLowerCase()}">
           ✓ ${scorePct}% Factual Grounding (${grStatus})
+        </span>
+        <span class="retrieval-mode-pill">
+          ⚡ ${retMode === 'HYBRID' ? 'Hybrid RRF' : retMode}
         </span>
         <span style="color:var(--text-muted); font-size:11px;">
           ${citations.length} Verified Sources &bull; ${turn.execution_time_seconds || '0.01'}s
@@ -910,7 +931,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (activeAgents.has("SearchAgent")) {
       setPipelineNodeActive("SearchAgent");
-      if (orchestrationStatusLabel) orchestrationStatusLabel.textContent = "Dense Semantic Vector Retrieving...";
+      if (orchestrationStatusLabel) orchestrationStatusLabel.textContent = "Hybrid Retrieving (Dense + BM25 RRF)...";
       await sleep(150);
       setPipelineNodeCompleted("SearchAgent");
     }

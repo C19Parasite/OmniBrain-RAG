@@ -203,7 +203,8 @@ class GuardrailEvaluator:
         return self._deterministic_judge(claims, citations_catalog)
 
     def _judge_with_gemini(self, claims: List[str], evidence_corpus: str, citations_catalog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY}"
         
         prompt = f"""You are a strict financial compliance judge auditing an investment memo for hallucinations.
 Verify each claim sentence against the retrieved evidence.
@@ -224,12 +225,13 @@ Return ONLY valid JSON matching this schema."""
 
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 1000}
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 2000}
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            raw_text = "".join([p.get("text", "") for p in parts if "text" in p]).strip()
             if raw_text.startswith("```json"):
                 raw_text = raw_text[7:]
             if raw_text.startswith("```"):

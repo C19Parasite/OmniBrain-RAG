@@ -1,8 +1,12 @@
 import chromadb
+import logging
+import math
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from ..config import settings
 from .hybrid import BM25Index, reciprocal_rank_fusion
+
+logger = logging.getLogger(__name__)
 
 class ChromaVectorStore:
     """
@@ -31,6 +35,71 @@ class ChromaVectorStore:
         # Sparse BM25 index for keyword & exact numeric matching
         self.bm25_index = BM25Index()
         self._sync_bm25_from_collection()
+
+    @staticmethod
+    def _validate_embedding(embedding: List[float], expected_dimension: Optional[int] = None) -> None:
+        if embedding is None or len(embedding) == 0:
+            raise ValueError("Embedding cannot be empty.")
+        if expected_dimension is not None and len(embedding) != expected_dimension:
+            raise ValueError(
+                f"Embedding dimension {len(embedding)} does not match expected {expected_dimension}."
+            )
+        if not all(math.isfinite(float(value)) for value in embedding):
+            raise ValueError("Embedding contains non-finite values.")
+        if not any(float(value) != 0.0 for value in embedding):
+            raise ValueError("Embedding cannot be all zeros.")
+
+    def ensure_embedding_space(self, embeddings: Any) -> bool:
+        """Re-embed persisted chunks when their provider/model space changes."""
+        expected_space = embeddings.embedding_space
+        metadata = dict(self.collection.metadata or {})
+        if metadata.get("embedding_space") == expected_space:
+            return False
+
+        count = self.collection.count()
+        if count:
+            data = self.collection.get(include=["documents", "metadatas", "embeddings"])
+            existing = data.get("embeddings")
+            if existing is not None and len(existing):
+                self._validate_embedding(existing[0], embeddings.dimension)
+            pending = [
+                (chunk_id, document, dict(metadata or {}))
+                for chunk_id, document, metadata in zip(
+                    list(data["ids"]),
+                    list(data.get("documents") or []),
+                    list(data.get("metadatas") or []),
+                )
+                if (metadata or {}).get("embedding_space") != expected_space
+            ]
+            logger.info("Re-embedding %s of %s chunks into %s.", len(pending), count, expected_space)
+            # Commit each provider batch immediately. If a quota error occurs,
+            # the next startup resumes only the unfinished chunks.
+            for start in range(0, len(pending), 10):
+                batch = pending[start:start + 10]
+                vectors = embeddings.embed_documents([item[1] for item in batch])
+                for vector in vectors:
+                    self._validate_embedding(vector, embeddings.dimension)
+                metadatas = []
+                for _, _, metadata in batch:
+                    metadata["embedding_space"] = expected_space
+                    metadatas.append(metadata)
+                self.collection.upsert(
+                    ids=[item[0] for item in batch],
+                    documents=[item[1] for item in batch],
+                    metadatas=metadatas,
+                    embeddings=vectors,
+                )
+
+            still_pending = self.collection.get(
+                include=["metadatas"]
+            ).get("metadatas") or []
+            if any((metadata or {}).get("embedding_space") != expected_space for metadata in still_pending):
+                raise RuntimeError("Embedding-space migration did not complete.")
+
+        metadata["embedding_space"] = expected_space
+        metadata["embedding_dimension"] = embeddings.dimension
+        self.collection.modify(metadata=metadata)
+        return count > 0
 
     def _sync_bm25_from_collection(self):
         """Populates BM25 index from existing persistent ChromaDB collection."""
@@ -67,6 +136,10 @@ class ChromaVectorStore:
         """
         if not chunks:
             return 0
+        if len(chunks) != len(embeddings):
+            raise ValueError("Each chunk must have exactly one embedding.")
+        for embedding in embeddings:
+            self._validate_embedding(embedding)
 
         ids = [c["id"] for c in chunks]
         documents = [c["text"] for c in chunks]
@@ -102,14 +175,16 @@ class ChromaVectorStore:
         query_embedding: List[float],
         top_k: int = 5,
         chunk_type_filter: Optional[str] = None,
-        doc_ids: Optional[List[str]] = None
+        doc_ids: Optional[List[str]] = None,
+        min_similarity: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
         Performs cosine similarity search against multimodal chunks.
         Supports filtering by chunk_type and specific document IDs.
         """
-        if not query_embedding or not any(v != 0.0 for v in query_embedding):
-            return []
+        self._validate_embedding(query_embedding)
+        if min_similarity is None:
+            min_similarity = settings.SIMILARITY_THRESHOLD
 
         count = self.collection.count()
         if count == 0:
@@ -154,6 +229,8 @@ class ChromaVectorStore:
             for idx in range(len(ids)):
                 dist = float(distances[idx])
                 similarity = round(max(0.0, min(1.0, 1.0 - dist)), 4)
+                if similarity < min_similarity:
+                    continue
                 meta = metas[idx]
                 chunk_id = ids[idx]
 
@@ -170,6 +247,12 @@ class ChromaVectorStore:
                     "retrieval_method": "dense"
                 })
 
+        logger.info(
+            "Dense retrieval: requested=%s returned=%s threshold=%.4f scores=%s",
+            top_k, len(formatted_results), min_similarity,
+            [(item["id"], item["similarity_score"]) for item in formatted_results],
+        )
+
         return formatted_results
 
     def search_hybrid(
@@ -179,7 +262,7 @@ class ChromaVectorStore:
         top_k: int = 5,
         chunk_type_filter: Optional[str] = None,
         doc_ids: Optional[List[str]] = None,
-        mode: str = "hybrid"
+        mode: str = "dense"
     ) -> List[Dict[str, Any]]:
         """
         Hybrid retrieval combining Dense Semantic Cosine Search and Sparse BM25 Search
@@ -229,7 +312,14 @@ class ChromaVectorStore:
         if not dense_results and not sparse_results:
             return []
         if not dense_results:
-            return sparse_results[:top_k]
+            # BM25 may re-rank semantic candidates, but cannot manufacture
+            # literal-overlap results after dense retrieval rejects them.
+            return []
+        if not sparse_results:
+            return dense_results[:top_k]
+
+        dense_ids = {item["id"] for item in dense_results}
+        sparse_results = [item for item in sparse_results if item.get("id") in dense_ids]
         if not sparse_results:
             return dense_results[:top_k]
 
@@ -245,7 +335,7 @@ class ChromaVectorStore:
         top_k: int = 5,
         doc_ids: Optional[List[str]] = None,
         query: str = "",
-        mode: str = "hybrid"
+        mode: str = "dense"
     ) -> List[Dict[str, Any]]:
         """High-level text search supporting hybrid, dense, or sparse modes."""
         return self.search_hybrid(

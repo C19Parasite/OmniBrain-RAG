@@ -78,6 +78,8 @@ def sync_document_inventory():
 def init_vector_store():
     """Index sample financial documents and visual charts into Chroma vector store if empty."""
     sample_dir = settings.SAMPLE_DATA_DIR
+    # A provider/model change invalidates every vector in the old embedding space.
+    vector_store.ensure_embedding_space(embeddings)
     if sample_dir.exists():
         if vector_store.count() == 0:
             chunks = doc_parser.parse_directory(sample_dir)
@@ -140,7 +142,7 @@ async def run_query(req: QueryRequest):
         document_ids=req.document_ids,
         gemini_api_key=req.gemini_api_key,
         openai_api_key=req.openai_api_key,
-        retrieval_mode=req.retrieval_mode or "hybrid"
+        retrieval_mode=req.retrieval_mode or "dense"
     )
     
     # Format structured citations

@@ -559,7 +559,7 @@ document.addEventListener("DOMContentLoaded", () => {
           gemini_api_key: geminiKey,
           openai_api_key: openaiKey,
           document_ids: activeChatDocIds,
-          retrieval_mode: "hybrid"
+          retrieval_mode: "dense"
         })
       });
 
@@ -586,7 +586,7 @@ document.addEventListener("DOMContentLoaded", () => {
         execution_trace: data.execution_trace || [],
         self_correction: data.self_correction || null,
         resolved_query: data.resolved_query || null,
-        retrieval_mode: data.retrieval_mode || "hybrid",
+        retrieval_mode: data.retrieval_mode || "dense",
         execution_time_seconds: data.execution_time_seconds
       };
 
@@ -712,7 +712,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const citations = turn.citations || [];
     const scorePct = Math.round((gr?.overall_score || 1.0) * 100);
     const grStatus = gr?.status || "PASSED";
-    const retMode = (turn.retrieval_mode || "hybrid").toUpperCase();
+    const retMode = (turn.retrieval_mode || "dense").toUpperCase();
 
     const auditBar = document.createElement("div");
     auditBar.className = "turn-audit-bar";

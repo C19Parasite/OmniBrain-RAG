@@ -2,6 +2,7 @@ import re
 import json
 import time
 import sqlite3
+import logging
 from uuid import uuid4
 import urllib.request
 import urllib.error
@@ -21,6 +22,12 @@ from .search_agent import SearchAgent
 from .vision_agent import VisionAgent
 from ..guardrails.evaluator import GuardrailEvaluator
 from ..observability.langfuse import observe, update as update_observation, flush as flush_langfuse
+
+logger = logging.getLogger(__name__)
+
+
+class GeminiAPIError(RuntimeError):
+    """Gemini failure with a safe, actionable HTTP diagnostic."""
 
 
 class _ConversationGraphState(TypedDict, total=False):
@@ -87,12 +94,12 @@ class SupervisorOrchestrator:
         builder.add_edge("research", END)
         return builder.compile(checkpointer=self.checkpointer)
 
-    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, thread_id: Optional[str] = None, retrieval_mode: Optional[str] = "hybrid") -> SupervisorState:
+    def process_query(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, thread_id: Optional[str] = None, retrieval_mode: Optional[str] = "dense") -> SupervisorState:
         """Run a query in a checkpointed LangGraph conversation thread."""
         # Legacy clients that do not send a thread ID must not accidentally
         # share memory with another request.
         thread_id = thread_id or str(uuid4())
-        mode = retrieval_mode or "hybrid"
+        mode = retrieval_mode or "dense"
         with observe(
             "OmniBrain Supervisor",
             "agent",
@@ -137,7 +144,7 @@ class SupervisorOrchestrator:
             gemini_api_key=(runtime.context or {}).get("gemini_api_key"),
             openai_api_key=(runtime.context or {}).get("openai_api_key"),
             conversation_history=history,
-            retrieval_mode=graph_state.get("retrieval_mode", "hybrid") or "hybrid",
+            retrieval_mode=graph_state.get("retrieval_mode", "dense") or "dense",
         )
         turn = {
             "user_query": state.query,
@@ -156,7 +163,7 @@ class SupervisorOrchestrator:
             "conversation_history": updated_history,
         }
 
-    def _process_query_once(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None, retrieval_mode: str = "hybrid") -> SupervisorState:
+    def _process_query_once(self, query: str, top_k: Optional[int] = None, temperature: Optional[float] = None, document_ids: Optional[List[str]] = None, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, conversation_history: Optional[List[Dict[str, Any]]] = None, retrieval_mode: str = "dense") -> SupervisorState:
         """
         Executes end-to-end multi-agent LangGraph workflow.
         """
@@ -524,7 +531,8 @@ class SupervisorOrchestrator:
         return (resolved, True) if resolved != query else (query, False)
 
     def _resolve_llm_gemini(self, query: str, recent_turns: List[Dict[str, Any]], key: str) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         turns_summary = "\n".join([f"Analyst: {t.get('user_query', '')}" for t in recent_turns])
         prompt = f"""You are a financial query resolution agent.
 Given the previous dialogue turns between an analyst and financial assistant:
@@ -539,12 +547,13 @@ Rules:
 - Return ONLY the rewritten query text without quotes or explanation."""
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 60}
+            "generationConfig": {"temperature": 0.0, "maxOutputTokens": 200}
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            rewritten = data["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"\'')
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            rewritten = "".join([p.get("text", "") for p in parts if "text" in p]).strip().strip('"\'')
             return rewritten if rewritten else query
 
     def _resolve_llm_openai(self, query: str, recent_turns: List[Dict[str, Any]], key: str) -> str:
@@ -731,7 +740,8 @@ Rules:
         return self._heuristic_query_expansion(query)
 
     def _reformulate_llm_gemini(self, query: str, key: str) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         prompt = (
             "You are a financial search query optimization specialist. "
             "Rewrite the user's natural language question into a clean, concise, keyword-rich search query "
@@ -744,12 +754,13 @@ Rules:
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 60}
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200}
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            rewritten = data["candidates"][0]["content"]["parts"][0]["text"].strip().strip('"\'')
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            rewritten = "".join([p.get("text", "") for p in parts if "text" in p]).strip().strip('"\'')
             return rewritten if rewritten else query
 
     def _reformulate_llm_openai(self, query: str, key: str) -> str:
@@ -808,76 +819,220 @@ Rules:
 
         return f"{clean} financial results performance segment revenue"
 
+    @staticmethod
+    def _deduplicate_and_rank_context(chunks: List[Dict[str, Any]], max_chunks: int = 8) -> List[Dict[str, Any]]:
+        """
+        Deduplicates and ranks retrieved chunks before synthesis.
+        1. Sorts by similarity_score descending.
+        2. Removes near-duplicate chunks (>85% text overlap via character-level set similarity).
+        3. Keeps top max_chunks after deduplication.
+        """
+        if not chunks:
+            return chunks
+
+        # Sort by relevance
+        sorted_chunks = sorted(chunks, key=lambda c: c.get("similarity_score", 0.0), reverse=True)
+
+        deduplicated = []
+        seen_texts: List[set] = []
+
+        for chunk in sorted_chunks:
+            text = (chunk.get("text") or "").strip().lower()
+            if not text:
+                continue
+            text_chars = set(text)
+
+            # Check overlap with already-accepted chunks
+            is_duplicate = False
+            for seen in seen_texts:
+                if not text_chars or not seen:
+                    continue
+                intersection = len(text_chars & seen)
+                union = len(text_chars | seen)
+                if union > 0 and (intersection / union) > 0.85:
+                    is_duplicate = True
+                    break
+
+            if not is_duplicate:
+                deduplicated.append(chunk)
+                seen_texts.append(text_chars)
+
+            if len(deduplicated) >= max_chunks:
+                break
+
+        return deduplicated
+
     def _synthesize_memo(self, state: SupervisorState, gemini_api_key: Optional[str] = None, openai_api_key: Optional[str] = None, observation: Optional[Any] = None) -> str:
         """
         Synthesizes collected multimodal data into direct Markdown answer.
         Uses frontier LLM (Gemini / OpenAI) if keys available, else falls back to extractive synthesizer.
+        Records synthesis provider and any failures in the execution trace.
         """
         gkey = gemini_api_key or settings.GEMINI_API_KEY
         okey = openai_api_key or settings.OPENAI_API_KEY
 
+        # Deduplicate and compress context before synthesis
+        state.search_results = self._deduplicate_and_rank_context(state.search_results)
+
         if gkey:
             try:
-                return self._synthesize_llm_gemini(state, key=gkey, observation=observation)
+                result = self._synthesize_llm_gemini(state, key=gkey, observation=observation)
+                state.add_trace(
+                    event_type="result",
+                    agent="Synthesizer",
+                    content="Synthesis completed via Gemini LLM. Generated comprehensive answer from retrieved evidence.",
+                    metadata={"provider": "gemini", "evidence_chunks": len(state.search_results)}
+                )
+                return result
             except Exception as e:
+                logger.exception(
+                    "Gemini synthesis failed (model=%s); trying configured fallback.",
+                    settings.GEMINI_MODEL,
+                )
+                state.add_trace(
+                    event_type="thought",
+                    agent="Synthesizer",
+                    content=f"Gemini synthesis failed: {e}. Attempting fallback provider.",
+                    metadata={"provider": "gemini", "error": str(e)}
+                )
                 print(f"[Synthesizer] Gemini call failed: {e}, falling back.")
         
         if okey:
             try:
-                return self._synthesize_llm_openai(state, key=okey, observation=observation)
+                result = self._synthesize_llm_openai(state, key=okey, observation=observation)
+                state.add_trace(
+                    event_type="result",
+                    agent="Synthesizer",
+                    content="Synthesis completed via OpenAI LLM. Generated comprehensive answer from retrieved evidence.",
+                    metadata={"provider": "openai", "evidence_chunks": len(state.search_results)}
+                )
+                return result
             except Exception as e:
+                state.add_trace(
+                    event_type="thought",
+                    agent="Synthesizer",
+                    content=f"OpenAI synthesis failed: {e}. Falling back to extractive mode.",
+                    metadata={"provider": "openai", "error": str(e)}
+                )
                 print(f"[Synthesizer] OpenAI call failed: {e}, falling back.")
 
-        return self._extractive_synthesizer(state)
+        state.add_trace(
+            event_type="thought",
+            agent="Synthesizer",
+            content="No LLM API available for synthesis. Using extractive mode (direct document excerpts).",
+            metadata={"provider": "extractive", "reason": "No valid API key or all LLM calls failed"}
+        )
+        extractive = self._extractive_synthesizer(state)
+        notice = (
+            "> **Note:** AI synthesis is temporarily unavailable (no valid API key or LLM calls failed). "
+            "The following is a direct extract from retrieved documents.\n\n"
+        )
+        return notice + extractive
 
     def _synthesize_llm_gemini(self, state: SupervisorState, key: str, observation: Optional[Any] = None) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
         context_prompt = self._build_context_prompt(state)
-        system_prompt = """You are an intelligent multimodal research assistant.
-Answer the user's question directly, clearly, comprehensively and naturally based ONLY on the provided retrieved context.
-CRITICAL RULES:
-- Do NOT output any boilerplate memo titles, 'Institutional Research Memorandum', 'Prepared by', 'Query:', or repetitive headers.
-- Directly answer the question in natural paragraphs or bullet points with full detail.
-- Include inline citations for every factual statement:
-  * For text reports/documents: [Source: document_name, p.X]
-  * For visual charts/tables: [Visual: image_name, p.X]
-  * For database metrics: [SQL: table_name]"""
+        system_prompt = (
+            "You are OmniBrain, an expert multimodal research analyst. "
+            "Your task is to synthesize a comprehensive, well-reasoned answer to the user's question "
+            "using ONLY the retrieved evidence provided below. Follow these rules strictly:\n\n"
+            "SYNTHESIS RULES:\n"
+            "1. SYNTHESIZE across all relevant evidence passages. Do NOT simply list or paraphrase individual chunks. "
+            "Identify patterns, compare data points, draw connections, and present a coherent analysis.\n"
+            "2. Structure your answer clearly: lead with the direct answer, then provide supporting analysis with details and reasoning.\n"
+            "3. Use natural paragraphs and bullet points as appropriate. Never output boilerplate memo titles, "
+            "'Institutional Research Memorandum', 'Prepared by', 'Query:', or repetitive headers.\n"
+            "4. Include inline citations for every factual statement:\n"
+            "   - For text reports/documents: [Source: document_name, p.X]\n"
+            "   - For visual charts/tables: [Visual: image_name, p.X]\n"
+            "   - For database metrics: [SQL: table_name]\n"
+            "5. If evidence is conflicting, acknowledge both sides and explain the discrepancy.\n"
+            "6. If evidence is insufficient to fully answer, say so explicitly: "
+            "'Based on the available evidence, ...' and explain what information is missing.\n"
+            "7. NEVER fabricate data, numbers, or facts not present in the retrieved context.\n"
+            "8. When conversation history is provided, use it for contextual continuity but do not cite prior answers as evidence.\n"
+            "9. For numerical data, present it precisely as it appears in the evidence.\n"
+            "10. Be thorough. A good answer is typically 200-500 words for complex questions."
+        )
 
         payload = {
+            "system_instruction": {
+                "parts": [{"text": system_prompt}]
+            },
             "contents": [
                 {
                     "parts": [
-                        {"text": system_prompt},
-                        {"text": f"User Question: {state.query}\n\nRetrieved Context:\n{context_prompt}\n\nDirect Comprehensive Answer:"}
+                        {"text": f"User Question: {state.query}\n\n{context_prompt}\n\nProvide a comprehensive, well-synthesized answer:"}
                     ]
                 }
             ],
-            "generationConfig": {"temperature": settings.TEMPERATURE, "maxOutputTokens": 1200}
+            "generationConfig": {"temperature": settings.TEMPERATURE, "maxOutputTokens": 4096}
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            usage = data.get("usageMetadata", {})
-            update_observation(observation, metadata={"provider": "gemini", "model": "gemini-1.5-flash"}, usage_details={
-                "input_tokens": usage.get("promptTokenCount", 0),
-                "output_tokens": usage.get("candidatesTokenCount", 0),
-                "total_tokens": usage.get("totalTokenCount", 0),
-            })
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")[:2_000]
+            raise GeminiAPIError(
+                f"Gemini generateContent failed: HTTP {exc.code}; response body: {body}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise GeminiAPIError(f"Gemini generateContent network error: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise GeminiAPIError("Gemini generateContent timed out after 30 seconds.") from exc
+
+        if "error" in data:
+            raise GeminiAPIError(f"Gemini returned an error payload: {data['error']}")
+        logger.info(
+            "Gemini synthesis succeeded (model=%s, response_id=%s, tokens=%s).",
+            model,
+            data.get("responseId"),
+            data.get("usageMetadata", {}).get("totalTokenCount"),
+        )
+
+        usage = data.get("usageMetadata", {})
+        update_observation(observation, metadata={"provider": "gemini", "model": model}, usage_details={
+            "input_tokens": usage.get("promptTokenCount", 0),
+            "output_tokens": usage.get("candidatesTokenCount", 0),
+            "total_tokens": usage.get("totalTokenCount", 0),
+        })
+        parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+        text = "".join([p.get("text", "") for p in parts if "text" in p]).strip()
+        if not text:
+            raise GeminiAPIError("Gemini returned no candidate text.")
+        return text
 
     def _synthesize_llm_openai(self, state: SupervisorState, key: str, observation: Optional[Any] = None) -> str:
         url = "https://api.openai.com/v1/chat/completions"
         context_prompt = self._build_context_prompt(state)
+        system_prompt = (
+            "You are OmniBrain, an expert multimodal research analyst. "
+            "Synthesize a comprehensive, well-reasoned answer using ONLY the retrieved evidence provided. "
+            "RULES: "
+            "(1) SYNTHESIZE across all relevant evidence -- identify patterns, compare data, draw connections, present coherent analysis. "
+            "Do NOT simply list or paraphrase individual chunks. "
+            "(2) Lead with the direct answer, then provide supporting details and reasoning. "
+            "(3) Use natural paragraphs and bullet points. Never output boilerplate headers, 'Query:', or 'Prepared by'. "
+            "(4) Cite every factual statement: [Source: document_name, p.X], [Visual: image_name, p.X], or [SQL: table_name]. "
+            "(5) If evidence is conflicting, acknowledge both sides. "
+            "(6) If evidence is insufficient, say 'Based on the available evidence, ...' and explain what is missing. "
+            "(7) NEVER fabricate data not in the context. "
+            "(8) Use conversation history for continuity but do not cite prior answers as evidence. "
+            "(9) Be thorough -- 200-500 words for complex questions."
+        )
         payload = {
             "model": "gpt-4o-mini",
             "messages": [
-                {"role": "system", "content": "You are a multimodal research assistant. Answer the user question directly and thoroughly without any memo headers or query repeats. Include inline citations [Source: doc, p.X], [Visual: img, p.X], or [SQL: table]."},
-                {"role": "user", "content": f"User Question: {state.query}\n\nContext:\n{context_prompt}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"User Question: {state.query}\n\n{context_prompt}\n\nProvide a comprehensive, well-synthesized answer:"}
             ],
-            "temperature": settings.TEMPERATURE
+            "temperature": settings.TEMPERATURE,
+            "max_tokens": 4096
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             usage = data.get("usage", {})
             update_observation(observation, metadata={"provider": "openai", "model": "gpt-4o-mini"}, usage_details={
@@ -888,27 +1043,49 @@ CRITICAL RULES:
             return data["choices"][0]["message"]["content"].strip()
 
     def _build_context_prompt(self, state: SupervisorState) -> str:
-        ctx = ""
+        sections = []
+
+        # Section 1: Conversation history (if multi-turn)
         if state.conversation_history:
-            ctx += "=== PREVIOUS DIALOGUE CONTEXT (MULTI-TURN MEMORY) ===\n"
+            history_lines = ["=== CONVERSATION HISTORY (use for context continuity, do NOT cite as evidence) ==="]
             for idx, turn in enumerate(state.conversation_history[-3:], start=1):
                 user_q = turn.get("user_query", "")
-                memo_prev = turn.get("assistant_memo", "")[:250].replace("\n", " ").strip()
+                memo_prev = turn.get("assistant_memo", "")[:300].replace("\n", " ").strip()
                 if user_q:
-                    ctx += f"Prior Turn {idx}: Analyst: '{user_q}' -> Assistant: {memo_prev}...\n"
-            ctx += "\n"
+                    history_lines.append(f"Turn {idx} -- User: '{user_q}' | Assistant summary: {memo_prev}")
+            sections.append("\n".join(history_lines))
 
+        # Section 2: SQL database results
         if state.sql_results:
-            ctx += "=== STRUCTURED FINANCIAL DATABASE RESULTS (SQL AGENT) ===\n"
+            sql_lines = ["=== DATABASE RESULTS (SQL Agent) ==="]
             for res in state.sql_results:
                 if res.get("is_valid") and res.get("rows"):
-                    ctx += f"Query: {res.get('executed_sql')} [SQL: quarterly_financials]\nRows: {res.get('rows')}\n\n"
+                    sql_lines.append(f"SQL Query: {res.get('executed_sql')} [SQL: quarterly_financials]")
+                    sql_lines.append(f"Rows: {res.get('rows')}")
+                    sql_lines.append("")
+            sections.append("\n".join(sql_lines))
 
-        ctx += "=== MULTIMODAL RETRIEVED CHUNKS (TEXT & VISUAL VLM) ===\n"
-        for chunk in state.search_results:
-            tag = "[Visual]" if chunk.get("chunk_type") == "visual" else "[Text]"
-            ctx += f"{tag} [Source: {chunk.get('source_document')}, p.{chunk.get('page_number')}] ({chunk.get('section_title')}):\n{chunk.get('text')}\n\n"
-        return ctx
+        # Section 3: Retrieved evidence passages (numbered, with similarity scores, truncated)
+        if state.search_results:
+            evidence_lines = ["=== RETRIEVED EVIDENCE PASSAGES ==="]
+            for idx, chunk in enumerate(state.search_results, start=1):
+                tag = "Visual" if chunk.get("chunk_type") == "visual" else "Text"
+                sim = chunk.get("similarity_score", 0.0)
+                source = chunk.get("source_document", "unknown")
+                page = chunk.get("page_number", 1)
+                section = chunk.get("section_title", "General")
+                text = (chunk.get("text") or "").strip()
+                # Truncate very long chunks to prevent single-chunk domination
+                if len(text) > 600:
+                    text = text[:597] + "..."
+                evidence_lines.append(
+                    f"[Evidence {idx}] ({tag}) [Source: {source}, p.{page}] "
+                    f"Section: {section} | Relevance: {sim:.2f}\n{text}"
+                )
+                evidence_lines.append("")
+            sections.append("\n".join(evidence_lines))
+
+        return "\n\n".join(sections)
 
     def _extractive_synthesizer(self, state: SupervisorState) -> str:
         """

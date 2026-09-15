@@ -23,7 +23,7 @@ class SearchAgent:
         query: str,
         top_k: Optional[int] = None,
         doc_ids: Optional[List[str]] = None,
-        mode: str = "hybrid"
+        mode: str = "dense"
     ) -> List[Dict[str, Any]]:
         """
         Executes hybrid retrieval (Dense embeddings + Sparse BM25 via Reciprocal Rank Fusion).
@@ -35,7 +35,7 @@ class SearchAgent:
         k = top_k if (top_k is not None and top_k > 0) else settings.TOP_K
 
         # 1. Embed query (used for dense or hybrid mode)
-        query_vector = self.embeddings.embed_text(query) if mode in ("dense", "hybrid") else None
+        query_vector = self.embeddings.embed_query(query) if mode in ("dense", "hybrid") else None
 
         # 2. Query ChromaDB vector store + BM25 sparse index
         results = self.vector_store.search_text(

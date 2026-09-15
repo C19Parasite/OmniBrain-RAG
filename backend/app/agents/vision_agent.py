@@ -92,7 +92,8 @@ class VisionAgent:
         return self._deterministic_vision_descriptor(filename)
 
     def _call_gemini_vision(self, image_b64: str, filename: str) -> str:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY}"
         prompt = """Analyze this corporate financial chart/table. Provide a comprehensive, structured text transcription detailing:
 1. Chart/Table Title and Context
 2. All quantitative rows, columns, metrics, dollar values ($B / $M), and percentages
@@ -113,12 +114,14 @@ Format clearly as factual financial text that can be indexed for semantic search
                     ]
                 }
             ],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 600}
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1000}
         }
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            raw_text = "".join([p.get("text", "") for p in parts if "text" in p]).strip()
+            return raw_text
 
     def _call_openai_vision(self, image_b64: str, filename: str) -> str:
         url = "https://api.openai.com/v1/chat/completions"

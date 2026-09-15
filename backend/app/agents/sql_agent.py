@@ -137,7 +137,8 @@ class TextToSQLAgent:
 
     def _call_gemini(self, question: str) -> str:
         """Call Google Gemini API to generate SQL."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+        model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash-lite")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY}"
         
         system_prompt = f"""You are an expert financial Text-to-SQL translator for SQLite.
 Given the following database schema, generate a single read-only SQLite SELECT query that directly answers the question.
@@ -156,7 +157,7 @@ Output ONLY the raw SQL query with no explanation, markdown code blocks, or comm
             ],
             "generationConfig": {
                 "temperature": settings.TEMPERATURE,
-                "maxOutputTokens": 300
+                "maxOutputTokens": 400
             }
         }
         
@@ -167,7 +168,8 @@ Output ONLY the raw SQL query with no explanation, markdown code blocks, or comm
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             res_data = json.loads(response.read().decode("utf-8"))
-            raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+            parts = res_data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            raw_text = "".join([p.get("text", "") for p in parts if "text" in p]).strip()
             return self._clean_llm_sql_output(raw_text)
 
     def _call_openai(self, question: str) -> str:

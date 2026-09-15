@@ -164,11 +164,23 @@ cp .env.example .env
 *(On Windows PowerShell: `Copy-Item .env.example .env`)*
 
 ### 3. Run the Application
-Launch the OmniBrain server:
+
+OmniBrain provides two user interface frontends to suit production and review requirements:
+
+#### Option A: Streamlit Multimodal Interface (Spec Review Mode)
+Launch the dedicated Streamlit interface featuring real-time thought process rendering and side-by-side visual exhibit display:
+```bash
+streamlit run streamlit_app.py
+```
+Open your browser at **[http://localhost:8501](http://localhost:8501)**.
+
+#### Option B: Production FastAPI & HTML5 Studio
+Launch the production web client served directly by the FastAPI backend:
 ```bash
 python main.py
 ```
 Open your browser at **[http://localhost:8000](http://localhost:8000)**.
+
 
 ---
 

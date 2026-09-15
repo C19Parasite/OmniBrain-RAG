@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import pypdf
 from PIL import Image
+from ..config import settings
 
 class FinancialDocumentParser:
     """
@@ -12,9 +13,11 @@ class FinancialDocumentParser:
     Extracts both textual passages and visual chart descriptions (via Vision Agent).
     """
 
-    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 100, vision_agent: Optional[Any] = None):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+    def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None, vision_agent: Optional[Any] = None):
+        self.chunk_size = chunk_size if chunk_size is not None else settings.CHUNK_SIZE
+        self.chunk_overlap = chunk_overlap if chunk_overlap is not None else settings.CHUNK_OVERLAP
+        if self.chunk_size <= 0 or self.chunk_overlap < 0:
+            raise ValueError("chunk_size must be positive and chunk_overlap cannot be negative.")
         if vision_agent is None:
             from ..agents.vision_agent import VisionAgent
             self.vision_agent = VisionAgent()
@@ -51,6 +54,60 @@ class FinancialDocumentParser:
                 all_chunks.extend(chunks)
 
         return all_chunks
+
+    def _split_coherent_text(self, text: str) -> List[str]:
+        """Split at sentence boundaries and preserve the configured overlap.
+
+        PDF extraction often provides one long, line-wrapped paragraph. The
+        former sliding word window cut thoughts mid-sentence and hard-coded a
+        20-word overlap, ignoring the configured value.
+        """
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return []
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        if not sentences:
+            sentences = [text]
+
+        units: List[str] = []
+        for sentence in sentences:
+            if len(sentence) <= self.chunk_size:
+                units.append(sentence)
+                continue
+            words = sentence.split()
+            current: List[str] = []
+            current_len = 0
+            for word in words:
+                if current and current_len + len(word) + 1 > self.chunk_size:
+                    units.append(" ".join(current))
+                    current = []
+                    current_len = 0
+                current.append(word)
+                current_len += len(word) + (1 if current_len else 0)
+            if current:
+                units.append(" ".join(current))
+
+        chunks: List[str] = []
+        current: List[str] = []
+        current_len = 0
+        for unit in units:
+            if current and current_len + len(unit) + 1 > self.chunk_size:
+                chunks.append(" ".join(current))
+                overlap: List[str] = []
+                overlap_len = 0
+                for prior in reversed(current):
+                    added = len(prior) + (1 if overlap else 0)
+                    if overlap and overlap_len + added > self.chunk_overlap:
+                        break
+                    overlap.insert(0, prior)
+                    overlap_len += added
+                current = overlap
+                current_len = sum(len(part) for part in current) + max(0, len(current) - 1)
+            current.append(unit)
+            current_len += len(unit) + (1 if current_len else 0)
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
 
     def _parse_standalone_image(self, file_path: Path) -> List[Dict[str, Any]]:
         """Uses Vision Agent to describe image/chart and creates a visual chunk."""
@@ -105,19 +162,7 @@ class FinancialDocumentParser:
                         if len(clean_para) > 15:
                             page_chunks.append(clean_para)
                     else:
-                        # Split by sliding window with overlap
-                        words = clean_para.split()
-                        curr_words = []
-                        curr_len = 0
-                        for w in words:
-                            curr_words.append(w)
-                            curr_len += len(w) + 1
-                            if curr_len >= self.chunk_size:
-                                page_chunks.append(" ".join(curr_words))
-                                curr_words = curr_words[-20:] # overlap
-                                curr_len = sum(len(x) + 1 for x in curr_words)
-                        if curr_words and len(" ".join(curr_words)) > 20:
-                            page_chunks.append(" ".join(curr_words))
+                        page_chunks.extend(self._split_coherent_text(clean_para))
 
                 for p_idx, p_text in enumerate(page_chunks):
                     chunk_id = f"{doc_id}_p{page_num}_c{p_idx+1}"
@@ -189,32 +234,19 @@ class FinancialDocumentParser:
             if header_match:
                 current_section_title = header_match.group(2).strip()
 
-            if len(clean_sec) <= self.chunk_size:
+            for chunk_text in self._split_coherent_text(clean_sec):
+                if len(chunk_text) <= 10:
+                    continue
                 chunk_id = f"{doc_id}_p{current_page}_c{len(chunks)+1}"
                 chunks.append({
                     "id": chunk_id,
                     "doc_id": doc_id,
-                    "text": clean_sec,
+                    "text": chunk_text,
                     "source_document": filename,
                     "page_number": current_page,
                     "section_title": current_section_title,
                     "chunk_type": "text",
                     "image_base64": None
                 })
-            else:
-                # Sub-chunk larger sections
-                paragraphs = [p.strip() for p in clean_sec.split("\n\n") if len(p.strip()) > 10]
-                for p_idx, para in enumerate(paragraphs):
-                    chunk_id = f"{doc_id}_p{current_page}_c{len(chunks)+1}"
-                    chunks.append({
-                        "id": chunk_id,
-                        "doc_id": doc_id,
-                        "text": para,
-                        "source_document": filename,
-                        "page_number": current_page,
-                        "section_title": current_section_title,
-                        "chunk_type": "text",
-                        "image_base64": None
-                    })
 
         return chunks

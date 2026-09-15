@@ -127,6 +127,26 @@ class TestHybridSearch(unittest.TestCase):
         self.assertEqual(deleted, 1)
         self.assertEqual(store.bm25_index.corpus_size, 2)
 
+    def test_dense_threshold_excludes_low_similarity_top_k_fillers(self):
+        """Top-k must not turn weak vector matches into evidence."""
+        store = ChromaVectorStore(
+            persist_dir=self.test_dir,
+            collection_name="test_threshold_col"
+        )
+        chunks = [
+            {**self.sample_chunks[0], "id": "threshold_relevant"},
+            {**self.sample_chunks[1], "id": "threshold_irrelevant"},
+        ]
+        store.add_chunks(chunks, [[1.0, 0.0], [0.0, 1.0]])
+
+        results = store.search_chunks(
+            query_embedding=[1.0, 0.0],
+            top_k=2,
+            min_similarity=0.75,
+        )
+
+        self.assertEqual([result["id"] for result in results], ["threshold_relevant"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,7 +106,7 @@ class QueryRequest(BaseModel):
     gemini_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     document_ids: Optional[List[str]] = None  # Specific document context for this chat
-    retrieval_mode: Optional[str] = "hybrid"  # 'hybrid', 'dense', or 'bm25'
+    retrieval_mode: Optional[str] = "dense"  # 'dense', 'hybrid', or 'bm25'
 
 class SelfCorrectionReport(BaseModel):
     triggered: bool = False
@@ -128,7 +128,7 @@ class QueryResponse(BaseModel):
     sql_results: List[Dict[str, Any]] = Field(default_factory=list)
     self_correction: Optional[Dict[str, Any]] = None
     resolved_query: Optional[str] = None
-    retrieval_mode: Optional[str] = "hybrid"
+    retrieval_mode: Optional[str] = "dense"
     execution_time_seconds: float = 0.0
 
 # --- Export Memo Models ---
